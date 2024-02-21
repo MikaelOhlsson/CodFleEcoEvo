@@ -1,7 +1,6 @@
 ---
 title: "Cod-Flounder empirical data"
-author: "Ohlsson et al."
-date: "8/22/2023"
+date: "1/11/2024"
 output: 
   html_document:
     code_folding: show
