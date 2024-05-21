@@ -1,6 +1,6 @@
 ---
 title: "Cod-Flounder empirical data"
-date: "1/11/2024"
+date: "05/21/2024"
 output: 
   html_document:
     code_folding: show
@@ -17,10 +17,10 @@ knitr::opts_chunk$set(echo = TRUE, cache = FALSE, message = FALSE)
 library(factoextra)
 library(ggh4x)
 library(cowplot)
+library(tidyverse)
 theme_set(theme_bw())
 theme_update(panel.grid = element_blank(),
              strip.background = element_rect(fill = "white", colour = "black"))
-library(tidyverse)
 ```
 
 ## Loading data
@@ -47,8 +47,13 @@ stom_data <- read_csv("../data/stom_data_light.csv") %>%
 # Biomass index
 cod_fle_index <- read_csv("../data/cod_fle_index.csv")
 
-# Catch density per length cod and flounder
+# Catch density per length cod and flounder (superfluous data removed)
+#read_csv("../data/catch_by_length.csv") %>% 
+#select(density, year, quarter, haul_id, sub_div, length_cm, species) %>% 
+#filter(sub_div %in% c(25,28) & density > 0 & species %in% c("cod", "flounder")) %>% 
+#write_csv("cod_fle_size_light.csv")
 cod_fle_size <- read_csv("../data/cod_fle_size_light.csv") 
+
 ```
 
 
@@ -142,33 +147,11 @@ gg_biomass
 ```
 
 
-## Dietary proportions
+### Fig. 3 Biomass and dietary distance
 
-Plot showing small cod's (15-30 cm) dietary proportion of fish and invertebrates. X-facets show which quarter data was collected, and Y-facets show subdivisions. Data is somewhat limited for especially subdivision 25, but hints a local deitary shift in subdivision 28 in the recent years during Q1. 
-
-```{r PreyComp_DF, out.width="100%", fig.width = 7, fig.height = 3}
-gg_cod_proportional_fish <- stom_data %>%  
-  filter(quarter %in% c(1,4) & 
-           !is.na(species_group) &
-           year >= 1976 & 
-           predator_length_cm %in% 15:30 &
-           subdiv %in% c(25,28)
-         ) %>% 
-  group_by(predator_name, subdiv, year, quarter) %>%
-  count(prey_type) %>%
-  ungroup() %>%
-  mutate(pred_div = paste0(predator_name, "_", subdiv)) %>%
-  mutate(pred_div  = factor(pred_div)) %>%
-  filter(predator_name == "cod") %>% 
-  ggplot() +
-    aes(x = year, y = n, fill = prey_type) +
-    geom_bar(stat = "identity", position = "fill") + #
-    scale_fill_manual(values = c("steelblue", "goldenrod"))  + 
-    scale_x_continuous(expand = expansion(add = c(0.25,0.25))) +
-    facet_grid(subdiv~quarter, scales = "free_x", space = "free_x") +
-    labs(y = "Proportional diet", x = "Year", fill = "Prey type") 
-
-gg_cod_proportional_fish
+```{r}
+gg_bio_diet <- plot_grid(gg_biomass, plot_grid(gg_dist, NULL, ncol = 2, rel_widths = c(0.965,0.035)), ncol = 1, labels = c("A", "B"))
+ggsave(plot = gg_bio_diet, filename = "../fig/fig3.pdf", width = 6.6, height = 5)
 ```
 
 ## Body size distribution
@@ -197,9 +180,10 @@ cod_fle_size %>%
 Due to the somewhat limited data, years are aggregated as the brackets below. Also, due to the difference in sampling frequency, we calculate the proportional biomass per length class instead of the actual density. Rolling averages for the length classes is also used to smooth the low sampling in the earlier year brackets. 
 
 ```{r}
-year_brackets <- c(1992,1995, 1998, 2001, 2005, 2010, 2015, 2020)
+# First, aggregating
+year_brackets <- c(1992, 2000, 2010, 2020)
 
-  d2 <- cod_fle_size %>%
+d2 <- cod_fle_size %>%
   filter(species %in% c("cod", "flounder")) %>%
   filter(sub_div %in% c(25, 28)) %>%
 mutate(length_cm = round(length_cm, digits = 0)) %>%
@@ -208,12 +192,11 @@ mutate(length_cm = round(length_cm, digits = 0)) %>%
   summarise(density = sum(density)) %>%
   ungroup()
 
-# Total density, used to calculate proportional density 
+# Total density of hauls, used to calculate proportional density 
 dsum <- cod_fle_size %>%
   filter(species %in% c("cod", "flounder")) %>%
   filter(sub_div %in% c(25, 28)) %>%
   mutate(length_cm = round(length_cm, digits = 0)) %>%
-#  mutate(year_cat = ifelse(year > 2005, "new", "old")) %>% 
   mutate(year_cat = cut(year, year_brackets, dig.lab = 10)) %>% 
   group_by(year_cat, sub_div, species, quarter) %>% #year_cat
   summarise(tot_density = sum(density)) %>%
@@ -227,47 +210,53 @@ d3 <- d2 %>%
   # summarise(prop_tot = sum(prop)) %>%
   # ungroup()
   
-# Mean density
-  dmean <- d3 %>%
+# Q4 Mean length based on density of length classes
+  dmean_q4 <- d3 %>%
   filter(length_cm > 0 & quarter %in% c(4)) %>%
-    mutate(year_cat = case_when(
-    year_cat == "(1992,1995]" ~ "1993-1995",
-    year_cat == "(1995,1998]" ~ "1996-1998",
-    year_cat == "(1998,2001]" ~ "1999-2001",
-    year_cat == "(2001,2005]" ~ "2002-2005",
-    year_cat == "(2005,2010]" ~ "2006-2010",  
-    year_cat == "(2010,2015]" ~ "2011-2015",
-    year_cat == "(2015,2020]" ~ "2016-2020")) %>%
-    mutate(n = ceiling(density)) %>% 
-    group_by(species, year_cat, sub_div, quarter) %>%
-    summarise(meanlength = sum(length_cm * n) / sum(n)) %>%
-    ungroup()
+  mutate(year_cat = case_when(
+    year_cat == "(1992,2000]" ~ "1993-2000",
+    year_cat == "(2000,2010]" ~ "2001-2010",
+    year_cat == "(2010,2020]" ~ "2011-2020")) %>%
+  mutate(n = ceiling(density)) %>% 
+  group_by(species, year_cat, sub_div, quarter) %>%
+  summarise(meanlength = sum(length_cm * n) / sum(n)) %>%
+  ungroup()
+  
+  # Q1 Mean length based on density of length classes
+  dmean_q1 <- d3 %>%
+  filter(length_cm > 0 & quarter %in% c(1)) %>%
+  mutate(year_cat = case_when(
+    year_cat == "(1992,2000]" ~ "1993-2000",
+    year_cat == "(2000,2010]" ~ "2001-2010",
+    year_cat == "(2010,2020]" ~ "2011-2020")) %>%
+  mutate(n = ceiling(density)) %>% 
+  group_by(species, year_cat, sub_div, quarter) %>%
+  summarise(meanlength = sum(length_cm * n) / sum(n)) %>%
+  ungroup()
 ```
 
-Plotting proportional biomass density
+# Fig. 4 Plotting length distributions
 
-```{r plotdensity, out.width="80%", fig.width = 7, fig.height = 9}
+Quarter 4 data, for subdivisions 25 and 28, length visualized as moving 3-year average. Visual length cutoff at 75 cm.
+
+```{r plotdensity, out.width="80%", fig.width = 5, fig.height = 4}
 pally <- "Dark2"
 gg_length_dist <- d3 %>%
   filter(length_cm > 0 & quarter %in% c(4)) %>%
-  # rollprop = Moving average
-   mutate(rollprop = stats::filter(prop, filter = rep(1/3, 3), sides = 2)) %>%
-    mutate(year_cat = case_when(
-    year_cat == "(1992,1995]" ~ "1993-1995",
-    year_cat == "(1995,1998]" ~ "1996-1998",
-    year_cat == "(1998,2001]" ~ "1999-2001",
-    year_cat == "(2001,2005]" ~ "2002-2005",
-    year_cat == "(2005,2010]" ~ "2006-2010",  
-    year_cat == "(2010,2015]" ~ "2011-2015",
-    year_cat == "(2015,2020]" ~ "2016-2020")) %>%
+  # rollprop = Moving 3 year average
+  mutate(rollprop = stats::filter(prop, filter = rep(1/3, 3), sides = 2)) %>%
+  mutate(year_cat = case_when(
+    year_cat == "(1992,2000]" ~ "1993-2000",
+    year_cat == "(2000,2010]" ~ "2001-2010",
+    year_cat == "(2010,2020]" ~ "2011-2020")) %>%  
   ggplot() + 
   aes((length_cm), ymin = 0, ymax = rollprop, 
       fill = as.factor(species), color = as.factor(species)) +
   geom_ribbon(alpha = 0.5) +
- geom_vline(data = dmean,
+ geom_vline(data = dmean_q4,
 aes(xintercept = meanlength,
     color = fct_relevel(species, c("flounder", "cod"))), linewidth = 1) +
-  facet_nested(year_cat ~ sub_div) +  
+  facet_grid(year_cat ~ sub_div) +  
   scale_color_brewer(palette = pally) +
   scale_fill_brewer(palette = pally) +
   scale_y_continuous(breaks = c(0,0.05,0.1), expand = expansion(mult = c(0,0.05))) +
@@ -278,6 +267,71 @@ aes(xintercept = meanlength,
   theme(legend.position = "bottom") +
   NULL
 gg_length_dist
+ggsave(filename = "../fig/fig4.pdf", plot = gg_length_dist, width = 5, height = 4)
+```
+
+# Fig. S2 Plotting length distributions
+
+Quarter 1 data, for subdivisions 25 and 28, length visualized as moving 3-year average. Visual length cutoff at 75 cm.
+
+```{r plotdensity_q1, out.width="80%", fig.width = 5, fig.height = 4}
+pally <- "Dark2"
+gg_length_dist_q1 <- d3 %>%
+  filter(length_cm > 0 & quarter %in% c(1)) %>%
+  # rollprop = Moving 3 year average
+  mutate(rollprop = stats::filter(prop, filter = rep(1/3, 3), sides = 2)) %>%
+  mutate(year_cat = case_when(
+    year_cat == "(1992,2000]" ~ "1993-2000",
+    year_cat == "(2000,2010]" ~ "2001-2010",
+    year_cat == "(2010,2020]" ~ "2011-2020")) %>%  
+  ggplot() + 
+  aes((length_cm), ymin = 0, ymax = rollprop, 
+      fill = as.factor(species), color = as.factor(species)) +
+  geom_ribbon(alpha = 0.5) +
+ geom_vline(data = dmean_q1,
+aes(xintercept = meanlength,
+    color = fct_relevel(species, c("flounder", "cod"))), linewidth = 1) +
+  facet_grid(year_cat ~ sub_div) +  
+  scale_color_brewer(palette = pally) +
+  scale_fill_brewer(palette = pally) +
+  scale_y_continuous(breaks = c(0,0.05,0.1), expand = expansion(mult = c(0,0.05))) +
+  scale_x_continuous(expand = expansion(mult = c(0,00))) +
+  coord_cartesian(xlim = c(15,75)) +
+  labs(#subtitle = "Lines indicate mean and 95% quantiles (dashed)", 
+       x = "Length (cm)", y = "Biomass Proportion", color = "Species", fill = "Species") + 
+  theme(legend.position = "bottom") +
+  NULL
+gg_length_dist_q1
+ggsave(filename = "../fig/figs2.pdf", plot = gg_length_dist, width = 5, height = 4)
+```
+
+## Fig. S3 Dietary proportions
+
+Plot showing small cod's (15-40 cm) dietary proportion of fish and invertebrates. X-facets show which quarter data was collected, and Y-facets show subdivisions. Data is somewhat limited for especially subdivision 25, but hints a local dietary shift in subdivision 28 in the recent years during Q1. 
+
+```{r PreyComp_DF, out.width="100%", fig.width = 7, fig.height = 3}
+gg_cod_proportional_fish <- stom_data %>%  
+  filter(quarter %in% c(1,4) & 
+           !is.na(species_group) &
+           year >= 1976 & 
+           predator_length_cm %in% 15:40 &
+           subdiv %in% c(25,28)
+         ) %>% 
+  group_by(predator_name, subdiv, year, quarter) %>%
+  count(prey_type) %>%
+  ungroup() %>%
+  mutate(pred_div = paste0(predator_name, "_", subdiv)) %>%
+  mutate(pred_div  = factor(pred_div)) %>%
+  filter(predator_name == "cod") %>% 
+  ggplot() +
+    aes(x = year, y = n, fill = prey_type) +
+    geom_bar(stat = "identity", position = "fill") + #
+    scale_fill_manual(values = c("steelblue", "goldenrod"))  + 
+    scale_x_continuous(expand = expansion(add = c(0.25,0.25))) +
+    facet_grid(subdiv~quarter, scales = "free_x", space = "free_x") +
+    labs(y = "Proportional diet", x = "Year", fill = "Prey type") 
+gg_cod_proportional_fish
+ggsave(filename = "../fig/figs3.pdf", plot = gg_cod_proportional_fish, width = 8, height = 3)
 ```
 
 

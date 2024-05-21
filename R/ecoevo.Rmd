@@ -1,14 +1,17 @@
 ---
 title: "Cod-Flounder eco-evo model"
-date: "01/11/2024"
+date: "05/21/2024"
 output: 
-  html_document
+  html_document:
+      code_folding: show
 editor_options: 
   chunk_output_type: console
+  markdown: 
+    wrap: 72
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, fig.align = "left", fig.width = 6, fig.height = 3, out.width = "40%")
+knitr::opts_chunk$set(echo = TRUE, fig.align = "left", fig.width = 6, fig.height = 3, out.width = "67%")
 library(tidyverse)
 library(deSolve)
 library(cowplot)
@@ -18,67 +21,36 @@ theme_update(panel.grid = element_blank(),
              strip.background = element_rect(fill = "white"))
 ```
 
-# Eco-evolutionary model
-
-Parameters with their respective variable names in parenthesis, default values.
-
-| Parameter    | Value    | Explanation                                      |
-|--------------|----------|--------------------------------------------------|
-| $z$ (z)         | variable | Cod body size                                    |
-| $\mu$ (m)       | variable | Cod mean body size                               |
-| $\mu_{F}$ (mF)    | 0        | Flounder mean body size                          |
-| $\sigma$ (s)     | $1/2$    | Cod body size standard deviation                 |
-| $\sigma_{F}$ (sF) | $1/3$    | Flounder body size standard deviation            |
-| $\theta$ (theta)      | 5        | Trait range width where growth is still possible |
-| $\varrho$ (rho)    | 15       | Growth magnitude parameter                       |
-| $F$ (Fpop)         | 10       | Flounder competition magnitude                   |
-| $\omega$ (w)     | 1        | Trait distance competition parameter             |
-| $h^{2}$ (h2)     | 0.1      | Heritability                                     |
-| $z^{*}$ (zstar)     | 1        | Cod ideal growth body size                       |
-| $\eta$ (eta)       | 0, 1, 2  | Fishing intensity                                |
-| $\kappa$ (o)    | 3        | Hypoxic effect magnitude                         |
-
-## Helper functions
-
-As per supplementary functions S12-S17.
-
-```{r helper_funcs}
-#Defining complementary error function
-erf <- function(x) 2 * pnorm(x * sqrt(2)) - 1
-erfc <- function(x) 2 * pnorm(x * sqrt(2), lower = FALSE)
-
-b <- function(zstar, m, s, theta, rho, o) -rho * (-theta^2 + (zstar - m)^2 + s^2) / theta^2 - 1/2 * o * erfc((zstar-m) / (sqrt(2)*s)) 
-u <- function(m, s, eta) eta * exp(m + s^2 / 2)
-falpha <- function(m, mF, s, sF, w) {
-  W <- 2 * (s^2 + sF^2) + w^2
-  exp(-(m - mF)^2 / W) * w / sqrt(W)
-}
-
-g <- function(zstar, m, s, theta, rho, o) -exp(-(zstar-m)^2 / (2*s^2)) * o * s / sqrt(2*pi) + 2 * (zstar - m) * rho * s^2 / theta^2 
-  
-v <- function(m, s, eta)  s^2 * eta * exp(m + s^2 / 2)
-fbeta <- function(m, mF, s, sF, w) {
-  falpha(m, mF, s, sF, w) * 2 * s^2 * (mF - m) / (2 * (s^2 + sF^2) + w^2)
-}
-```
-
 ## Main functions
 
-As per Supplementary functions S6-S7.
+As per Eqs. 26-27.
 
 ```{r main_funcs}
-dNdt <- function(m, s, eta, theta, rho, N, alpha0, mF, sF, Fpop, w, zstar, o) {
-  N * (b(zstar, m, s, theta, rho, o) - u(m, s, eta) - N * alpha0 - Fpop * falpha(m, mF, s, sF, w))
+erf <- function(x) 2 * pnorm(x * sqrt(2)) - 1
+
+dNdt <- function(m, s, eta, theta, rho, N, alpha0, mF, sF, Fpop, w, zstar, tau, Z, nu, k) {
+  N * (rho / theta^2 * (theta^2 - (zstar - m)^2 - s^2) - 
+         eta / 2 * (erf(m / sqrt(2 * s^2 + tau^2)) + 1) - 
+         k / 2* (erf((m - Z) / sqrt(2 * s^2 + nu^2))) - 
+         N * alpha0 * sqrt(w^2/(4 * s^2 + w^2)) - 
+         Fpop * (alpha0 * sqrt(w^2 / (2 * s^2 + 2 * sF^2 + w^2)) * 
+                exp(-(m - mF)^2 / (2 * s^2 + 2 * sF^2 + w^2)))
+       )
 }
 
 
-dmdt <- function(m, s, theta, rho, eta, Fpop, mF, sF, w, h2, zstar, o) {
-  h2 * (g(zstar, m, s, theta, rho, o) - v(m, s, eta) - Fpop * fbeta(m, mF, s, sF, w))
+dmdt <- function(m, s, eta, theta, rho, alpha0, mF, sF, Fpop, w, zstar, tau, Z, nu, k, h2) {
+  h2 * ( (2 * rho * s^2 / theta^2) * (zstar - m) - 
+           eta * s^2 / sqrt(pi * (2 * s^2 + tau^2)) * exp(-m^2 / (2 * s^2 + tau^2)) - 
+           k * s^2 / sqrt(pi * (2*s^2 + nu^2)) * exp(-(m - Z)^2 / (2*s^2 + nu^2)) -
+           Fpop * (2 * s^2 * w * (mF - m) * alpha0 / (2 * s^2 + 2 * sF^2 + w^2)^(3/2) * 
+                  exp(-(m - mF)^2 / (2 * s^2 + 2 * sF^2 + w^2))) 
+         )
 }
+
 ```
 
-
-# Plotting
+# Fig. 1
 
 ## Density examples
 
@@ -106,8 +78,9 @@ gg_equil1 <- tibble(`body size` = seq(-2.4, 2.4, l = 201)) %>%
   labs(x = expression(paste("mean body size ", mu))) + 
   theme(#legend.position = "bottom", legend.direction = "horizontal",
         #legend.box.margin = margin(t = -10), 
-        panel.grid = element_blank())
-#gg_equil1
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
 
 equildf2 <- tibble(`body size` = c(0,-1.0), density = c(1,1), species = c("flounder", "cod"), txt = c("b", "a"))
 gg_equil2 <- tibble(`body size` = seq(-2.4, 2.4, l = 201)) %>%
@@ -129,9 +102,10 @@ gg_equil2 <- tibble(`body size` = seq(-2.4, 2.4, l = 201)) %>%
   labs(x = expression(paste("mean body size ", mu))) +
   theme(#legend.position = "none", legend.direction = "horizontal",
         #legend.box.margin = margin(t = -10), 
-        panel.grid = element_blank()) 
-#gg_equil2
-  
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank()) 
+
 ```
 
 
@@ -140,12 +114,14 @@ gg_equil2 <- tibble(`body size` = seq(-2.4, 2.4, l = 201)) %>%
 Illustrating the body size dependent rate of change for cod body size, with and without fishing.
 
 ```{r bodysize_nofishing}
-equildf3 <- tibble(x = c(-1.22, 0, 1.23), y = c(0,0,0), sh = factor(c("small cod","flounder","large cod"), levels = c("small cod","flounder","large cod")), txt = c("a", "b", "c"))
-bodysize_eq_nofish <- tibble(m = seq(-2.5, 2.5, l = 201)) %>%
-mutate(nofishing = dmdt(m, mF = 0, s = 1/2, theta = 4, eta = 0, rho = 20, sF = 1/3, Fpop = 6.8, w = 1, h2 = 1, zstar = 0, o = 0)) %>%
+equildf3 <- tibble(x = c(-1.4, 0, 1.4), y = c(0,0,0), sh = factor(c("small cod","flounder","large cod"), levels = c("small cod","flounder","large cod")), txt = c("a", "b", "c"))
+bodysize_eq_nofish <- tibble(m = seq(-2.0, 2.0, l = 2001)) %>%
+  mutate(nofishing = dmdt(m, mF = 0, s = 1/2, theta = 4, eta = 0, alpha0 = 1 / sqrt(2), 
+                        rho = 12, sF = 1/2, Fpop = 8, w = 1, h2 = 1.0, zstar = 0, 
+                        k = 0, tau = 1/2, Z = 1, nu = 3/2)) %>%
   pivot_longer(cols = contains("fishing")) %>%
   mutate(name = fct_relevel(name, "nofishing")) %>%
-  filter(name == "nofishing") %>% 
+  filter(name == "nofishing") %>%  # & value > -0.001 & value < 0.001 ## to check x-axis intersects
   ggplot(aes(x = m, y = value)) +
   geom_line(colour = "cornflowerblue") +
   scale_x_continuous(expand = expansion(0,0)) +
@@ -157,17 +133,21 @@ mutate(nofishing = dmdt(m, mF = 0, s = 1/2, theta = 4, eta = 0, rho = 20, sF = 1
   scale_fill_manual(values =  c("cornflowerblue", "darkseagreen", "cornflowerblue")) +
   geom_text(data = equildf3, aes(x, y, label = txt), nudge_x = 0.25, nudge_y = 0.08, color = "black") +
   labs(x = expression(paste("mean body size ", mu)), y = expression(paste(d~mu/d~t)), shape = "", fill = "") +
-  scale_y_continuous(limits = c(-0.75, 0.75)) +
-  theme(panel.grid = element_blank())
-#bodysize_eq_nofish
-#ggsave(plot = gg_mu_nofishing, filename = "../fig/mu_nofishing.png", width = 4, height =4)  
+  scale_y_continuous(limits = c(-0.6, 0.6)) +
+  theme(panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
+
+# Extract legend
 cowlegend <- get_legend(bodysize_eq_nofish + 
                           theme(legend.direction = "horizontal"))
 
 
-equildf4 <- tibble(x = c(-1.3, 0), y = c(0, 0), sh = c(1, 2), txt = c("a", "b"))
-bodysize_eq_fish <- tibble(m = seq(-2.5, 2.5, l = 201)) %>%
-mutate(nofishing = dmdt(m, mF = 0, s = 1/2, theta = 4, eta = 1, rho = 20, sF = 1/3, Fpop = 6.8, w = 1, h2 = 1, zstar = 0, o = 0)) %>%
+equildf4 <- tibble(x = c(-1.46, 0), y = c(0, 0), sh = c(1, 2), txt = c("a", "b"))
+bodysize_eq_fish <- tibble(m = seq(-2.0, 2.0, l = 2001)) %>%
+mutate(nofishing = dmdt(m, mF = 0, s = 1/2, theta = 4, eta = 0, alpha0 = 1 / sqrt(2), 
+                        rho = 12, sF = 1/2, Fpop = 8, w = 1, h2 = 1.0, zstar = 0, 
+                        k = 5, tau = 1/2, Z = 1, nu = 3/2)) %>%
   pivot_longer(cols = contains("fishing")) %>%
   mutate(name = fct_relevel(name, "nofishing")) %>%
   filter(name == "nofishing") %>% 
@@ -180,14 +160,15 @@ mutate(nofishing = dmdt(m, mF = 0, s = 1/2, theta = 4, eta = 1, rho = 20, sF = 1
   geom_point(equildf4, mapping=aes(x,y, shape = as.factor(sh)), size  = 3,fill = c("cornflowerblue", "darkseagreen")) +
   geom_text(data = equildf4, aes(x, y, label = txt), nudge_x = 0.25, nudge_y = 0.08, color = "black") +
   labs(x = expression(paste("mean body size ", mu)), y = expression(paste(d~mu/d~t)), shape = "species") +
-  scale_y_continuous(limits = c(-0.75, 0.75)) +
-  theme(panel.grid = element_blank())
-#bodysize_eq_fish
+  scale_y_continuous(limits = c(-0.6, 0.6)) +
+  theme(panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
 ```
 
-### Compound plot
+## Fig. 1 Output
 
-```{r figure1, out.width="100%", fig.width = 6.5, fig.height = 7.8}
+```{r figure1, out.width="80%", fig.width = 6.5, fig.height = 7.8}
 sizegrid <- cowplot::plot_grid(gg_equil1 + theme(legend.position = "none"), 
                                   bodysize_eq_nofish + theme(legend.position = "none"), 
                                gg_equil1 + theme(legend.position = "none"), 
@@ -200,163 +181,74 @@ sizegrid <- cowplot::plot_grid(gg_equil1 + theme(legend.position = "none"),
                    rel_widths = c(1,0.8), labels = c("A", "B", "C", "D", "E", "F"))
 sizegrid + draw_grob(cowlegend, x = 0, y = 0, width = 1, height = 0.2/3.2)
 
-#ggsave(filename = "../fig/sizegrid_greengold.pdf", plot = sizegrid + draw_grob(cowlegend, x = 0, y = 0, width = 1, height = 0.2/3.2), width = 5*1.3, height = 6*1.3)
+ggsave(filename = "../fig/fig1.pdf", plot = sizegrid + draw_grob(cowlegend, x = 0, y = 0, width = 1, height = 0.2/3.2), width = 5*1.3, height = 6*1.3)
 ```
 
-# Parameterized model
+# Full model
 
-```{r bodysize_fishing, out.width = "80%"}
- gg_mu_fishing <- tibble(m = seq(-2.5, 2.5, l = 201)) %>% 
-  mutate(nofishing = dmdt(m, s = 1/2, theta = 5, rho = 15, eta = 0,
-                          Fpop = 10, mF = 0, sF = 1/2, w = 1, 
-                          h2 = 0.1, zstar = 1, o = 3),
-       fishing = dmdt(m, s = 1/2, theta = 5, rho = 15, eta = 1,
-                          Fpop = 10, mF = 0, sF = 1/2, w = 1, 
-                      h2 = 0.1, zstar = 1, o = 3),
-       intfishing = dmdt(m, s = 1/2, theta = 5, rho = 15, eta = 2,
-                        Fpop = 10, mF = 0, sF = 1/2, w = 1, 
-                        h2 = 0.1, zstar = 1, o = 3)) %>%
-  pivot_longer(cols = contains("fishing")) %>%
-  mutate(name = fct_relevel(name, "nofishing", "fishing", "intfishing")) %>%
-  mutate(name = recode(name, "intfishing" = "Intense~fishing~(eta==2)",
-                       "fishing" = "Fishing~(eta==1)",
-                       "nofishing" = "No~fishing~(eta==0)")) %>%
-  ggplot(aes(x = m, y = value)) +
-  geom_line(colour = "steelblue") +
-  geom_hline(yintercept = 0, alpha = 0.4, linetype = "dashed") +
-  labs(x = expression(paste(mu)), y = expression(paste(d~mu/d~t))) +
-  scale_y_continuous(limits = c(-0.15, 0.15)) +
-  facet_grid(. ~ name, labeller = label_parsed)
-gg_mu_fishing
-#ggsave(plot = gg_mu_fishing, filename = "../fig/mu_scenarios.pdf", width = 5.5, height = 2.2)
+## Parameterization 
 
-```
+Parameters with their respective code variable names in parenthesis, and their default
+values.
 
-# Bodysize development over time in different scenarios
+| Parameter         | Value    | Explanation                                      |
+|------------------|------------------|-------------------------------------|
+| $z$ (z)           | variable | Cod body size                                    |
+| $\mu$ (m)         | variable | Cod mean body size                               |
+| $\mu_{F}$ (mF)    | 0        | Flounder mean body size                          |
+| $\sigma$ (s)      | $1/2$    | Cod body size standard deviation                 |
+| $\sigma_{F}$ (sF) | $1/2$    | Flounder body size standard deviation            |
+| $\theta$ (theta)  | 5        | Trait range width where growth is still possible |
+| $\varrho$ (rho)   | 5       | Growth magnitude parameter                       |
+| $F$ (Fpop)        | 4      | Flounder competition magnitude                   |
+| $\omega$ (w)      | 1/2       | Trait distance competition parameter             |
+| $h^{2}$ (h2)      | 1/2      | Heritability                                     |
+| $z^{*}$ (zstar)   | 1        | Cod ideal growth body size                       |
+| $\eta$ (eta)      | 0-2      | Fishing intensity                                |
+| $\tau$ (tau)      | $1/2$    | Fishing intensity transition                     |
+| $Z$ (Z)           | $1$      | Hypoxia intensity threshold                      |
+| $\nu$ (nu)        | $3/2$    | Hypoxia intensity transition                     |
+| $\kappa$ (k)      | 2        | Hypoxic effect magnitude                         |
 
-With current parameterization, population size $N$ is only used to confirm that the population does not crash.
-
-### ODE Equations
+## ODE functions
 
 ```{r ode_eq}
 eqs <- function(time, state, p) {
   N <- state[1]
   m <- state[2]
-  Ndot <- dNdt(m, p$s, p$eta, p$theta, p$rho, N, p$alpha0, p$mF, p$sF, p$Fpop, p$w, p$zstar, p$o)
-  mdot <- dmdt(m, p$s, p$theta, p$rho, p$eta, p$Fpop, p$mF, p$sF, p$w, p$h2, p$zstar, p$o)
+  Ndot <- dNdt(m, p$s, p$eta, p$theta, p$rho, N, p$alpha0, p$mF, p$sF, p$Fpop, p$w, p$zstar, p$tau, p$Z, p$nu, p$k)
+  mdot <- dmdt(m, p$s, p$eta, p$theta, p$rho, p$alpha0, p$mF, p$sF, p$Fpop, p$w, p$zstar, p$tau, p$Z, p$nu, p$k, p$h2)
   list(c(Ndot, mdot))
 }
 ```
 
-### Starting with ideal cod body size, no fishing ($\eta = 0$) and hypoxia ($\omicron = 3$):
+### Fig. 2 Parameterized model fishing scenarios
 
-```{r healthy_with_nofishing_hypoxia, fig.width = 6, out.width = "67%"}
-tibble(pars = list(list(mF = 0, s = 1/2, theta = 5, eta = 0, alpha0 = 1 / sqrt(2), 
-                        rho = 15, sF = 1/2, Fpop = 10, w = 1, h2 = 0.1, zstar = 1, o = 3))) %>%
-  mutate(ic = list(c(12, 1))) %>% 
-  mutate(sol = map2(pars, ic, ~ode(.y, seq(0, 100, by = 0.01), eqs, .x) %>%
-                      as.data.frame() %>%
-                      as_tibble() %>%
-                      rename(N = `1`, mu = `2`) %>%
-                      pivot_longer(cols = c(N, mu)) %>%
-                      mutate(name = fct_relevel(name, "N", "mu")))) %>%
-  unnest(sol) %>% 
-  #filter(name == "mu") %>%
-  ggplot(aes(x = time, y = value)) +
+```{r bodysize_fishing, out.width = "80%"}
+
+ gg_mu_fishing <- tibble(m = seq(-2.0, 2.0, l = 201)) %>% 
+  # eta fishing intensity parameter
+  mutate(nofishing = dmdt(m, mF = 0, s = 1/2, theta = 5, eta = 0, alpha0 = 1 / sqrt(2), 
+                        rho = 5, sF = 1/2, Fpop = 4, w = 1/2, h2 = 0.5, zstar = 1, 
+                        k = 2, tau = 1/2, Z = 1, nu = 3/2),
+       fishing = dmdt(m, mF = 0, s = 1/2, theta = 5, eta = 1, alpha0 = 1 / sqrt(2), 
+                        rho = 5, sF = 1/2, Fpop = 4, w = 1/2, h2 = 0.5, zstar = 1, 
+                        k = 2, tau = 1/2, Z = 1, nu = 3/2),
+       intfishing = dmdt(m, mF = 0, s = 1/2, theta = 5, eta = 2, alpha0 = 1 / sqrt(2), 
+                        rho = 5, sF = 1/2, Fpop = 4, w = 1/2, h2 = 0.5, zstar = 1, 
+                        k = 2, tau = 1/2, Z = 1, nu = 3/2)) %>%
+  pivot_longer(cols = contains("fishing")) %>%
+  mutate(name = fct_relevel(name, "nofishing", "fishing", "intfishing")) %>%
+  mutate(name = recode(name, "intfishing" = "bold(C)~-~Intense~fishing",
+                       "fishing" = "bold(B)~-~Fishing",
+                       "nofishing" = "bold(A)~-~No~fishing")) %>%
+  ggplot(aes(x = m, y = value)) +
   geom_line(colour = "steelblue") +
-  facet_wrap(.~name, scales = "free_y")
-```
-
-### Starting with ideal cod body size, moderate fishing ($\eta = 1$) and hypoxia ($\omicron = 3$):
-
-```{r healthy_with_fishing_hypoxia, fig.width = 6, out.width = "67%"}
-tibble(pars = list(list(mF = 0, s = 1/2, theta = 5, eta = 1, alpha0 = 1 / sqrt(2), 
-                        rho = 15, sF = 1/2, Fpop = 10, w = 1, h2 = 0.1, zstar = 1, o = 3))) %>%
-  mutate(ic = list(c(10, 1))) %>% 
-  mutate(sol = map2(pars, ic, ~ode(.y, seq(0, 100, by = 0.01), eqs, .x) %>%
-                      as.data.frame() %>%
-                      as_tibble() %>%
-                      rename(N = `1`, mu = `2`) %>%
-                      pivot_longer(cols = c(N, mu)) %>%
-                      mutate(name = fct_relevel(name, "N", "mu")))) %>%
-  unnest(sol) %>% 
-  ggplot(aes(x = time, y = value)) +
-  geom_line(colour = "steelblue") +
-  facet_wrap(.~name, scales = "free_y")
-```
-
-### Starting with ideal cod body size, intense fishing ($\eta = 2$) and hypoxia ($\omicron = 3$):
-
-```{r healthy_with_intense_fishing_hypoxia, fig.width = 6, out.width = "67%"}
-tibble(pars = list(list(mF = 0, s = 1/2, theta = 5, eta = 2, alpha0 = 1 / sqrt(2), rho = 15, sF = 1/2, Fpop = 10, w = 1, h2 = 0.1, zstar = 1, o = 3))) %>%
-  mutate(ic = list(c(10, 1))) %>% 
-  mutate(sol = map2(pars, ic, ~ode(.y, seq(0, 100, by = 0.01), eqs, .x) %>%
-                      as.data.frame() %>%
-                      as_tibble() %>%
-                      rename(N = `1`, mu = `2`) %>%
-                      pivot_longer(cols = c(N, mu)) %>%
-                      mutate(name = fct_relevel(name, "N", "mu")))) %>%
-  unnest(sol) %>% 
-  ggplot(aes(x = time, y = value)) +
-  geom_line(colour = "steelblue") +
-  facet_wrap(.~name, scales = "free_y")
-```
-
-## Starting with small cod body size ($\mu = -1$), no fishing pressure ($\eta = 0$) and hypoxia ($\omicron = 3$), with flounder competition:
-
-```{r lowcondition_without_fishing_hypoxia, fig.width = 6, out.width = "67%"}
-tibble(pars = list(list(mF = 0, s = 1/2, theta = 5, eta = 0, alpha0 = 1 / sqrt(2), rho = 15, sF = 1/2, Fpop = 10, w = 1, h2 = 0.1, zstar = 1, o = 3))) %>%
-  mutate(ic = list(c(10, -1))) %>%
-  mutate(sol = map2(pars, ic, ~ode(.y, seq(0, 100, by = 0.01), eqs, .x) %>%
-                      as.data.frame() %>%
-                      as_tibble() %>%
-                      rename(N = `1`, mu = `2`) %>%
-                      pivot_longer(cols = c(N, mu)) %>%
-                      mutate(name = fct_relevel(name, "N", "mu")))) %>%
-  unnest(sol) %>% 
-  ggplot(aes(x = time, y = value)) +
-  geom_line(colour = "steelblue") +
-  facet_wrap(.~name, scales = "free_y")
-```
-
-### Starting with small cod body size ($\mu = -1$), no fishing, with hypoxia and reduced flounder competition:
-
-```{r lowcondition_nofishing_lowflounder_hypoxia, fig.width = 6, out.width = "67%"}
-tibble(pars = list(list(mF = 0, s = 1/2, theta = 5, eta = 0, alpha0 = 1 / sqrt(2), rho = 15, sF = 1/2, Fpop = 4, w = 1, h2 = 0.1, zstar = 1, o = 3))) %>%
-  mutate(ic = list(c(15, -1))) %>%
-  mutate(sol = map2(pars, ic, ~ode(.y, seq(0, 200, by = 0.01), eqs, .x) %>%
-                      as.data.frame() %>%
-                      as_tibble() %>%
-                      rename(N = `1`, mu = `2`) %>%
-                      pivot_longer(cols = c(N, mu)) %>%
-                      mutate(name = fct_relevel(name, "N", "mu")))) %>%
-  unnest(sol) %>%
-  ggplot(aes(x = time, y = value)) +
-  geom_line(colour = "steelblue") +
-  facet_wrap(.~name, scales = "free_y")
-```
-
-```{r}
-tibble(x = -6:6) %>%
-  ggplot(aes(x)) +
-  stat_function(fun=function(x) (1/(1+exp(-x))))
-
-tibble(x = -6:6) %>%
-  ggplot(aes(x)) +
-  stat_function(fun=function(x) erf((sqrt(pi) /2)*x))
-
-tibble(x = -6:6) %>%
-  ggplot(aes(x)) +
-  stat_function(fun=function(x) x/(sqrt(1+x^2)))
-
-tibble(x = -6:6) %>%
-  ggplot(aes(x)) +
-  stat_function(fun=function(x) (1/2)+(1/2)*tanh(x/2))
-
-tibble(x = -6:6) %>%
-  ggplot(aes(x)) +
-  stat_function(fun=function(x) (1/2)*(erf(x/2)+1))
-
-
+  geom_hline(yintercept = 0, alpha = 0.4, linetype = "dashed") +
+  labs(x = expression(paste("Body size (", mu, ")")), y = expression(paste("Body size rate of change (", d~mu/d~t, ")"))) +
+  scale_y_continuous(limits = c(-0.2, 0.2)) +
+  facet_grid(. ~ name, labeller = label_parsed)
+gg_mu_fishing
+ggsave(plot = gg_mu_fishing, filename = "../fig/fig2.pdf", width = 7.0, height = 2.7)
 ```
 
