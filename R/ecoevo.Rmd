@@ -61,9 +61,9 @@ Illustrating body size distributions before and after fishing.
 equildf1 <- tibble(`body size` = c(0,1.4), density = c(1,1), species = c("flounder", "cod"), txt = c("b", "c"))
 gg_equil1 <- tibble(`body size` = seq(-2.4, 2.4, l = 201)) %>%
   mutate(flounder = exp(-(`body size`)^2 / (2 * 0.55^4)),
-         cod = 1 * exp(-(`body size` - 1.4)^2 / (2 * 0.55^4))) %>%
+         cod = 1 * exp(-(`body size` - 1.4)^2 / (2 * 0.55^4))) %>% 
   pivot_longer(cols = c(flounder, cod), names_to = "species", values_to = "density") %>%
-  mutate(density = if_else(density < 1e-4, NA_real_, density)) %>%
+  mutate(density = dplyr::if_else(density < 1e-4, NA_real_, density)) %>% #NA_real_
   ggplot(aes(x = `body size`, y = density, ymin = 0, ymax = density,
              colour = species, fill = species)) +
   geom_line(na.rm = TRUE) +
@@ -114,11 +114,11 @@ gg_equil2 <- tibble(`body size` = seq(-2.4, 2.4, l = 201)) %>%
 Illustrating the body size dependent rate of change for cod body size, with and without fishing.
 
 ```{r bodysize_nofishing}
-equildf3 <- tibble(x = c(-1.4, 0, 1.4), y = c(0,0,0), sh = factor(c("small cod","flounder","large cod"), levels = c("small cod","flounder","large cod")), txt = c("a", "b", "c"))
+equildf3 <- tibble(x = c(-1.205, 0.058, 1.21), y = c(0,0,0), sh = factor(c("small cod","flounder","large cod"), levels = c("small cod","flounder","large cod")), txt = c("a", "b", "c"))
 bodysize_eq_nofish <- tibble(m = seq(-2.0, 2.0, l = 2001)) %>%
-  mutate(nofishing = dmdt(m, mF = 0, s = 1/2, theta = 4, eta = 0, alpha0 = 1 / sqrt(2), 
-                        rho = 12, sF = 1/2, Fpop = 8, w = 1, h2 = 1.0, zstar = 0, 
-                        k = 0, tau = 1/2, Z = 1, nu = 3/2)) %>%
+  mutate(nofishing = dmdt(m, mF = 0, s = 1/2, theta = 5, eta = 0, alpha0 = 1 / sqrt(2), 
+                        rho = 5, sF = 1/2, Fpop = 4, w = 1/2, h2 = 0.5, zstar = 1, 
+                        k = 2, tau = 1/2, Z = 1, nu = 3/2)) %>%
   pivot_longer(cols = contains("fishing")) %>%
   mutate(name = fct_relevel(name, "nofishing")) %>%
   filter(name == "nofishing") %>%  # & value > -0.001 & value < 0.001 ## to check x-axis intersects
@@ -133,7 +133,7 @@ bodysize_eq_nofish <- tibble(m = seq(-2.0, 2.0, l = 2001)) %>%
   scale_fill_manual(values =  c("cornflowerblue", "darkseagreen", "cornflowerblue")) +
   geom_text(data = equildf3, aes(x, y, label = txt), nudge_x = 0.25, nudge_y = 0.08, color = "black") +
   labs(x = expression(paste("mean body size ", mu)), y = expression(paste(d~mu/d~t)), shape = "", fill = "") +
-  scale_y_continuous(limits = c(-0.6, 0.6)) +
+  scale_y_continuous(limits = c(-0.2, 0.2)) +
   theme(panel.grid = element_blank(),
         axis.text = element_blank(),
         axis.ticks = element_blank())
@@ -143,14 +143,14 @@ cowlegend <- get_legend(bodysize_eq_nofish +
                           theme(legend.direction = "horizontal"))
 
 
-equildf4 <- tibble(x = c(-1.46, 0), y = c(0, 0), sh = c(1, 2), txt = c("a", "b"))
+equildf4 <- tibble(x = c(-1.3, 0), y = c(0, 0), sh = c(1, 2), txt = c("a", "b"))
 bodysize_eq_fish <- tibble(m = seq(-2.0, 2.0, l = 2001)) %>%
-mutate(nofishing = dmdt(m, mF = 0, s = 1/2, theta = 4, eta = 0, alpha0 = 1 / sqrt(2), 
-                        rho = 12, sF = 1/2, Fpop = 8, w = 1, h2 = 1.0, zstar = 0, 
-                        k = 5, tau = 1/2, Z = 1, nu = 3/2)) %>%
+mutate(fishing = dmdt(m, mF = 0, s = 1/2, theta = 5, eta = 2, alpha0 = 1 / sqrt(2), 
+                        rho = 5, sF = 1/2, Fpop = 4, w = 1/2, h2 = 0.5, zstar = 1, 
+                        k = 2, tau = 1/2, Z = 1, nu = 3/2)) %>%
   pivot_longer(cols = contains("fishing")) %>%
-  mutate(name = fct_relevel(name, "nofishing")) %>%
-  filter(name == "nofishing") %>% 
+  mutate(name = fct_relevel(name, "fishing")) %>%
+  filter(name == "fishing") %>% 
   ggplot(aes(x = m, y = value)) +
   geom_line(colour = "cornflowerblue") +
   scale_shape_manual(values = c(23, 21), guide = "none") +
@@ -160,7 +160,7 @@ mutate(nofishing = dmdt(m, mF = 0, s = 1/2, theta = 4, eta = 0, alpha0 = 1 / sqr
   geom_point(equildf4, mapping=aes(x,y, shape = as.factor(sh)), size  = 3,fill = c("cornflowerblue", "darkseagreen")) +
   geom_text(data = equildf4, aes(x, y, label = txt), nudge_x = 0.25, nudge_y = 0.08, color = "black") +
   labs(x = expression(paste("mean body size ", mu)), y = expression(paste(d~mu/d~t)), shape = "species") +
-  scale_y_continuous(limits = c(-0.6, 0.6)) +
+  scale_y_continuous(limits = c(-0.2, 0.2)) +
   theme(panel.grid = element_blank(),
         axis.text = element_blank(),
         axis.ticks = element_blank())
