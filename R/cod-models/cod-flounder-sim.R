@@ -31,13 +31,15 @@ eqs <- function(time, state, pars) {
   beta <- alpha*2*pars$sigma^2*(-dm)/(2*sv+pars$w^2) # beta matrix
   # Ingredients for population density effects of effective intrinsic growth:
   growth <- pars$rho * (pars$theta^2 - (pars$zstar - m)^2 - v)
-  fishing <- pars$eta * Q(m / sqrt(2 * v + pars$tau^2))
+  fishing <- pars$eta * Q((m - pars$phi) / sqrt(2 * v + pars$tau^2))
   hypoxia <- pars$kappa * Q((m - pars$Z) / sqrt(2 * v + pars$nu^2))
   b <- growth - fishing - hypoxia
   # Ingredients for trait effects of effective intrinsic growth:
   growth_evo <- 2 * pars$rho * v * (pars$zstar - m) / pars$theta^2
-  fishing_evo <- pars$eta*v*exp(-m^2 / (2*v+pars$tau^2)) / sqrt(pi*(2*v+pars$tau^2))
-  hypoxia_evo <- pars$kappa*v*exp(-(m-pars$Z)^2/(2*v+pars$nu^2))/sqrt(pi*(2*v+pars$nu^2))
+  fishing_evo <- pars$eta * v * exp(-(m-pars$phi)^2/(2*v+pars$tau^2)) /
+    sqrt(pi*(2*v+pars$tau^2))
+  hypoxia_evo <- pars$kappa * v * exp(-(m-pars$Z)^2/(2*v+pars$nu^2)) /
+    sqrt(pi*(2*v+pars$nu^2))
   g <- growth_evo - fishing_evo - hypoxia_evo
   # Dynamical equations:
   dndt <- n * (b - drop(alpha %*% n)) # Equations for abundances
@@ -106,20 +108,21 @@ tibble(pars = list(list(
   w     = 1, # Competition width
   sigma = c(0.5, 0.5), # Species trait standard deviations
   theta = c(5, 5), # Width of intrinsic growth function
-  rho   = c(5, 1), # Maximum intrinsic growth rate
-  h2    = c(0.5, 0.01), # Heritability; set 2nd entry to 0 to stop flounder evolution
+  rho   = c(5, 5), # Maximum intrinsic growth rate
+  h2    = c(0.5, 0), # Heritability; set 2nd entry to 0 to stop flounder evolution
   zstar = c(1, 1), # Ideal body size
-  eta   = c(30, 0), # Fishing intensity
-  tau   = c(2, 0), # Fishing intensity transition speed
+  eta   = c(100, 100), # Fishing intensity
+  phi   = c(2, 0), # Fishing body size threshold
+  tau   = c(2, 1), # Fishing intensity transition speed
   Z     = c(1, 1), # Hypoxia body size threshold
   nu    = c(1.5, 1.5), # Hypoxia intensity transition speed
-  kappa = c(0, 0), # Maximum effect of hypoxia
+  kappa = c(1, 1), # Maximum effect of hypoxia
   model = eqs))
 ) |>
   mutate(ninit = list(c(100, 50)), # Initial species densities
          minit = list(c(3, 0)), # Initial species trait means
          ic = map2(ninit, minit, c)) |>
-  mutate(tseq = list(seq(0, 100, by = 0.01))) |> # Sampling points in time
+  mutate(tseq = list(seq(0, 100, by = 0.1))) |> # Sampling points in time
   mutate(sol = pmap(list(pars, ic, tseq), integrate_model)) |>
   unnest(sol) |>
   mutate(n = ifelse(n > 0, n, 0)) |>
