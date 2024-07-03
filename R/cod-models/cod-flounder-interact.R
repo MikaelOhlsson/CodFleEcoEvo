@@ -49,9 +49,8 @@ eqs <- function(time, state, pars) {
 
 
 organize_results <- function(sol, pars) {
-  dat <- as_tibble(as.data.frame(sol)) # Convert to tibble
-  S <- (ncol(dat) - 1) / 2 # Number of species (two cols per species, n and m, plus time)
-  dat |>
+  S <- pars$S # Number of species
+  as_tibble(as.data.frame(sol)) |>
     rename_with(~paste0("n_", 1:S), 1 + 1:S) |> # Rename density columns: n_1, ..., n_S
     rename_with(~paste0("m_", 1:S), 1 + S + 1:S) |> # Trait mean columns: m_1, ..., m_S
     pivot_longer(cols = !time, names_to = "variable", values_to = "v") |>
@@ -71,7 +70,9 @@ integrate_model <- function(pars, ic, tseq, ...) {
 
 theme_cod <- function(...) {
   theme_bw(...) +
-    theme(panel.grid = element_blank(), strip.background = element_rect(fill = "white"))
+    theme(panel.grid = element_blank(),
+          strip.background = element_rect(fill = "white"),
+          legend.position = "none")
 }
 
 
@@ -79,7 +80,8 @@ plot_density <- function(sol) {
   sol |>
     ggplot(aes(x = time, y = n, colour = species)) +
     geom_line() +
-    scale_y_continuous(name = "density", limits = c(0, NA)) +
+    labs(x = "Time") +
+    scale_y_continuous(name = "Density", limits = c(0, NA)) +
     scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
     theme_cod()
 }
@@ -90,7 +92,7 @@ plot_trait <- function(sol) {
     ggplot(aes(x = time)) +
     geom_ribbon(aes(ymin = m - sigma, ymax = m + sigma, fill = species), alpha = 0.15) +
     geom_line(aes(y = m, colour = species)) +
-    labs(y = "trait") +
+    labs(x = "Time", y = "Trait") +
     scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
     scale_fill_manual(values = c("cornflowerblue", "darkseagreen")) +
     theme_cod()
@@ -123,7 +125,8 @@ tibble(pars = list(list(
          minit = list(c(3, 0)), # Initial species trait means
          ic = map2(ninit, minit, c)) |>
   mutate(tseq = list(seq(0, 100, by = 0.1))) |> # Sampling points in time
-  mutate(sol = pmap(list(pars, ic, tseq), integrate_model)) |>
+  mutate(sol = pmap(list(pars, ic, tseq), integrate_model),
+         .keep = "none") |>
   unnest(sol) |>
   mutate(n = ifelse(n > 0, n, 0)) |>
   plot_all()

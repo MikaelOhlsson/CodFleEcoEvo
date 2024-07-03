@@ -173,20 +173,20 @@ tibble(pars = list(list(
   theta = matrix(5, 2, 2), # Widths of intrinsic growth functions (SxL)
   rho   = matrix(5, 2, 2), # Maximum intrinsic growth rates (SxL)
   zstar = matrix(1, 2, 2), # Ideal body sizes (SxL)
-  eta   = matrix(c(0, 0, 0, 0), 2, 2), # Fishing intensities (SxL)
+  eta   = matrix(c(100, 0, 100, 0), 2, 2), # Fishing intensities (SxL)
   phi   = matrix(1, 2, 2), # Fishing body size thresholds
   tau   = matrix(2, 2, 2), # Fishing intensity transition speeds
   Z     = matrix(1, 2, 2), # Hypoxia body size thresholds
   nu    = matrix(1.5, 2, 2), # Hypoxia intensity transition speeds
   kappa = matrix(1, 2, 2), # Maximum effects of hypoxia
-  mig   = 0.01 * array(c(0,0,1,1,1,1,0,0), c(2, 2, 2)), # Migration rates (SxLxL)
+  mig   = 0.8 * array(c(0,0,1,0,1,0,0,0), c(2, 2, 2)), # Migration rates (SxLxL)
   model = eqs))
 ) |>
-  mutate(ninit = list(c(130, 167, 130, 167)), # Initial densities n_1_1, n_2_1, ...
+  mutate(ninit = list(c(130, 0, 130, 167)), # Initial densities n_1_1, n_2_1, ...
          minit = list(c(3.46, 0, 3.46, 0)), # Initial trait means m_1_1, m_2_1, ...
          ic = map2(ninit, minit, c)) |>
-  mutate(tseq = list(seq(0, 100, by = 0.1))) |> # Sampling points in time
-  mutate(sol = pmap(list(pars, ic, tseq), integrate_model),
+  mutate(tseq = list(seq(0, 20, by = 0.01))) |> # Sampling points in time
+  mutate(sol = pmap(list(pars, ic, tseq), integrate_model), method = "bdf",
          .keep = "none") |>
   unnest(sol) |>
   mutate(n = ifelse(n > 0, n, 0)) |>
