@@ -50,7 +50,8 @@ dndt <- function(n, m, pars) {
   b <- eff_intr_growth(m, pars) # Total effective intrinsic growth
   # Competition coefficients:
   aCC <- pars$alpha0 * pars$w / sqrt(4 * v[1] + pars$w^2)
-  aCF <- pars$alpha0 * exp(-m^2/(2*sum(v)+pars$w^2)) * pars$w / sqrt(2*sum(v)+pars$w^2)
+  aCF <- pars$alpha0 * pars$alphaF * exp(-m^2/(2*sum(v)+pars$w^2)) * pars$w /
+    sqrt(2*sum(v)+pars$w^2)
   # Competitor population density:
   F <- flounder_eqb_density(pars)
   # Return population's rate of change:
@@ -62,8 +63,8 @@ dmdt <- function(m, pars) {
   v <- pars$sigma^2 # Trait variances
   g <- eff_evo_growth(m, pars) # Total trait effects from growth
   # Effect of competition on evolution:
-  bCF <- pars$alpha0 * exp(-m^2/(2*sum(v)+pars$w^2)) * 2*v[1]*pars$w*(-m) /
-    (2*sum(v)+pars$w^2)^(3/2)
+  bCF <- pars$alpha0 * pars$alphaF * exp(-m^2/(2*sum(v)+pars$w^2)) *
+    2*v[1]*pars$w*(-m) / (2*sum(v)+pars$w^2)^(3/2)
   # Competitor population density:
   F <- flounder_eqb_density(pars)
   # Return trait's rate of change:
@@ -138,22 +139,23 @@ plot_phase <- function(traits, pars) {
 
 
 tibble(pars = list(list(
-  w      = 2, # Competition width
+  w      = 1, # Competition width
   alpha0 = 1, # Maximum competition between two phenotypes
+  alphaF = 0.02, # Reduction of flounder-to-cod competition from imperfect overlap
   sigma  = c(0.5, 0.5), # Species trait standard deviations
   theta  = 5, # Width of intrinsic growth function
   rho    = 5, # Maximum intrinsic growth rate
   h2     = 0.5, # Heritability; set 2nd entry to 0 to stop flounder evolution
-  zstar  = 1, # Ideal body size
+  zstar  = 0, # Ideal body size
   eta    = 0, # Fishing intensity
-  phi    = 1, # Fishing body size threshold
+  phi    = 0, # Fishing body size threshold
   tau    = 0.5, # Fishing intensity transition width
   Z      = 1, # Hypoxia body size threshold
   nu     = 1.5, # Hypoxia intensity transition width
   kappa  = 2, # Maximum effect of hypoxia
   model  = eqs))
 ) |>
-  mutate(phase_plot = map(pars, \(x) plot_phase(traits = seq(-8, 8, l = 201), x))) |>
+  mutate(phase_plot = map(pars, \(x) plot_phase(traits = seq(-4, 4, l = 201), x))) |>
   mutate(ninit = 40, # Initial species densities
          minit = 4.5, # Initial species trait means
          ic = map2(ninit, minit, c)) |>
