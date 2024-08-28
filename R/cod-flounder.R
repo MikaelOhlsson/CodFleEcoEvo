@@ -31,6 +31,8 @@ eqs <- function(time, state, pars) {
   alpha_otherDim <- pars$alpha0 * # Competition from overlap in other traits
     matrix(c(1, pars$alphaI, pars$alphaI, 1), 2, 2)
   alpha <- alpha_otherDim * exp(-dm^2/(sv+w2)) / sqrt(pi*(sv+w2))
+  # Competitive effect of cod on flounder is zeroed out for simpler model:
+  if (pars$feedback == "no feedback") alpha[2,1] <- 0
   beta <- alpha*v*(-dm) / (sv+w2)
   # Ingredients for population density effects of effective intrinsic growth:
   growth <- pars$rho * (pars$theta^2 - (pars$zstar - m)^2 - v) / pars$theta^2
@@ -112,7 +114,7 @@ tibble(pars = list(list(
   S      = 2, # Number of species
   w      = 1, # Competition width
   alpha0 = 1, # Baseline competition strength
-  alphaI = 0.8, # Reduction of competition due to imperfect overlap
+  alphaI = 1, # Reduction of competition due to imperfect overlap
   sigma  = c(0.5, 0.5), # Species trait standard deviations
   theta  = 5, # Width of intrinsic growth function
   rho    = 10, # Maximum intrinsic growth rate
@@ -124,6 +126,7 @@ tibble(pars = list(list(
   zeta   = 1, # Hypoxia body size threshold
   nu     = 1.5, # Hypoxia intensity transition speed
   kappa  = 1, # Maximum effect of hypoxia
+  feedback = "with feedback", # Set to "no feedback" for no cod-to-flounder interaction
   model  = eqs))
 ) |>
   mutate(ninit = list(c(19.1, 17.2)), # Initial species densities

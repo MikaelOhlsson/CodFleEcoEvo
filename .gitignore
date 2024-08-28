@@ -12,6 +12,5 @@
 *.fls
 *.rubbercache
 */rstudio
-/data/results_big/
-/legacy
+*.Rproj
 .Rproj.user
