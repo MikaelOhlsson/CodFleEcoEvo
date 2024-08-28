@@ -26,21 +26,23 @@ eqs <- function(time, state, pars) {
   # Ingredients for effects of competition:
   dm <- outer(m, m, FUN = `-`) # Difference matrix of trait means
   v <- pars$sigma^2 # Trait variances
-  sv <- 2*outer(v, v, FUN = `+`) + diag(rep(pars$w^2, 2)) # Effective variance matrix
-  alpha_otherDim <- pars$alpha0 * matrix(c(1, pars$alphaI, pars$alphaI, 1), 2, 2)
-  alpha <- alpha_otherDim * exp(-dm^2/sv) / sqrt(pi*sv)
-  beta <- alpha*2*v*(-dm) / sv
+  sv <- outer(v, v, FUN = `+`) # Sum matrix of trait variances
+  w2 <- pars$w^2 # Width of competition kernel
+  alpha_otherDim <- pars$alpha0 * # Competition from overlap in other traits
+    matrix(c(1, pars$alphaI, pars$alphaI, 1), 2, 2)
+  alpha <- alpha_otherDim * exp(-dm^2/(sv+w2)) / sqrt(pi*(sv+w2))
+  beta <- alpha*v*(-dm) / (sv+w2)
   # Ingredients for population density effects of effective intrinsic growth:
-  growth <- pars$rho * (pars$theta^2 - (pars$zstar - m)^2 - v)
-  fishing <- pars$eta * Q((m - pars$phi) / sqrt(2 * v + pars$tau^2))
-  hypoxia <- pars$kappa * Q((m - pars$zeta) / sqrt(2 * v + pars$nu^2))
+  growth <- pars$rho * (pars$theta^2 - (pars$zstar - m)^2 - v) / pars$theta^2
+  fishing <- pars$eta * Q((m - pars$phi) / sqrt(2*v + pars$tau^2))
+  hypoxia <- pars$kappa * Q((m - pars$zeta) / sqrt(2*v + pars$nu^2))
   b <- growth - fishing - hypoxia
   # Ingredients for trait effects of effective intrinsic growth:
   growth_evo <- 2 * pars$rho * v * (pars$zstar - m) / pars$theta^2
-  fishing_evo <- pars$eta * v * exp(-(m-pars$phi)^2/(2*v+pars$tau^2)) /
-    sqrt(pi*(2*v+pars$tau^2))
-  hypoxia_evo <- pars$kappa * v * exp(-(m-pars$zeta)^2/(2*v+pars$nu^2)) /
-    sqrt(pi*(2*v+pars$nu^2))
+  fishing_evo <- pars$eta * v * exp(-(m-pars$phi)^2/(2*v + pars$tau^2)) /
+    sqrt(pi*(2*v + pars$tau^2))
+  hypoxia_evo <- pars$kappa * v * exp(-(m-pars$zeta)^2/(2*v + pars$nu^2)) /
+    sqrt(pi*(2*v + pars$nu^2))
   g <- growth_evo - fishing_evo - hypoxia_evo
   # Dynamical equations:
   dndt <- n * (b - drop(alpha %*% n)) # Equations for abundances
@@ -110,22 +112,22 @@ tibble(pars = list(list(
   S      = 2, # Number of species
   w      = 1, # Competition width
   alpha0 = 1, # Baseline competition strength
-  alphaI = 0.1, # Reduction of competition due to imperfect overlap
+  alphaI = 0.8, # Reduction of competition due to imperfect overlap
   sigma  = c(0.5, 0.5), # Species trait standard deviations
-  theta  = c(5, 5), # Width of intrinsic growth function
-  rho    = c(5, 5), # Maximum intrinsic growth rate
+  theta  = 5, # Width of intrinsic growth function
+  rho    = 10, # Maximum intrinsic growth rate
   h2     = c(0.5, 0), # Heritability; set 2nd entry to 0 to stop flounder evolution
-  zstar  = c(1, 1), # Ideal body size
-  eta    = c(100, 100), # Fishing intensity
-  phi    = c(1.1, 1.1), # Fishing body size threshold
-  tau    = c(2, 2), # Fishing intensity transition speed
-  zeta   = c(1, 1), # Hypoxia body size threshold
-  nu     = c(1.5, 1.5), # Hypoxia intensity transition speed
-  kappa  = c(1, 1), # Maximum effect of hypoxia
+  zstar  = 1, # Ideal body size
+  eta    = 10, # Fishing intensity
+  phi    = 1.1, # Fishing body size threshold
+  tau    = 2, # Fishing intensity transition speed
+  zeta   = 1, # Hypoxia body size threshold
+  nu     = 1.5, # Hypoxia intensity transition speed
+  kappa  = 1, # Maximum effect of hypoxia
   model  = eqs))
 ) |>
-  mutate(ninit = list(c(300, 320)), # Initial species densities
-         minit = list(c(3, 0)), # Initial species trait means
+  mutate(ninit = list(c(19.1, 17.2)), # Initial species densities
+         minit = list(c(0.97, 0)), # Initial species trait means
          ic = map2(ninit, minit, c),
          tseq = list(seq(0, 100, by = 0.1))) |> # Sampling points in time
   mutate(sol = pmap(list(pars, ic, tseq), integrate_model), .keep = "none") |>

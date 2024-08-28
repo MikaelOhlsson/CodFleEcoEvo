@@ -1,0 +1,17 @@
+*~
+*.Rhistory
+*.RData
+*.DS_Store
+*.aux
+*.bbl
+*.blg
+*.log
+*.toc
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.rubbercache
+*/rstudio
+/data/results_big/
+/legacy
+.Rproj.user
