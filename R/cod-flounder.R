@@ -21,8 +21,8 @@ cutoff <- function(n) {
 # Output:
 # - Time derivatives of the state variables coerced into a single vector
 eqs <- function(time, state, pars) {
-  n <- state[1:pars$S] # Species densities
-  m <- state[(pars$S+1):(2*pars$S)] # Species trait means
+  n <- state[1:2] # Species densities
+  m <- state[3:4] # Species trait means
   # Ingredients for effects of competition:
   dm <- outer(m, m, FUN = `-`) # Difference matrix of trait means
   v <- pars$sigma^2 # Trait variances
@@ -30,7 +30,7 @@ eqs <- function(time, state, pars) {
   w2 <- pars$w^2 # Width of competition kernel
   alpha_otherDim <- pars$alpha0 * # Competition from overlap in other traits
     matrix(c(1, pars$alphaI, pars$alphaI, 1), 2, 2)
-  alpha <- alpha_otherDim * exp(-dm^2/(sv+w2)) / sqrt(pi*(sv+w2))
+  alpha <- alpha_otherDim * exp(-dm^2/(2*(sv+w2))) / sqrt(2*pi*(sv+w2))
   # Competitive effect of cod on flounder is zeroed out for simpler model:
   if (pars$feedback == "no feedback") alpha[2,1] <- 0
   beta <- alpha*v*(-dm) / (sv+w2)
@@ -54,10 +54,9 @@ eqs <- function(time, state, pars) {
 
 
 organize_results <- function(sol, pars) {
-  S <- pars$S # Number of species
   as_tibble(as.data.frame(sol)) |>
-    rename_with(~paste0("n_", 1:S), 1 + 1:S) |> # Rename density columns: n_1, ..., n_S
-    rename_with(~paste0("m_", 1:S), 1 + S + 1:S) |> # Trait mean columns: m_1, ..., m_S
+    rename_with(~paste0("n_", 1:2), 2:3) |> # Rename density columns: n_1, ..., n_S
+    rename_with(~paste0("m_", 1:2), 4:5) |> # Trait mean columns:     m_1, ..., m_S
     pivot_longer(cols = !time, names_to = "variable", values_to = "v") |>
     separate(col = variable, into = c("type", "species"), sep = "_", convert = TRUE) |>
     pivot_wider(names_from = "type", values_from = "v") |> # Separate cols for n and m
@@ -109,31 +108,41 @@ plot_all <- function(sol) {
 }
 
 
+generate_params <- function(w = 1, alpha0 = 1, alphaI = 1, theta = 5, rho = 10,
+                            zstar = 1, eta = 0, phi = 1.1, tau = 2, zeta = 1, nu = 1.5,
+                            kappa = 1, sigma = c(0.5, 0.5), h2 = c(0.5, 0),
+                            feedback = "with feedback", model = eqs) {
+  list(
+    w      = w, # Competition width
+    alpha0 = alpha0, # Baseline competition strength
+    alphaI = alphaI, # Reduction of competition due to imperfect overlap
+    sigma  = sigma, # Species trait standard deviations
+    theta  = theta, # Width of intrinsic growth function
+    rho    = rho, # Maximum intrinsic growth rate
+    h2     = h2, # Heritability; set 2nd entry to 0 to stop flounder evolution
+    zstar  = zstar, # Ideal body size for intrinsic growth
+    eta    = eta, # Fishing intensity
+    phi    = phi, # Fishing body size threshold
+    tau    = tau, # Fishing intensity transition speed
+    zeta   = zeta, # Hypoxia body size threshold
+    nu     = nu, # Hypoxia intensity transition speed
+    kappa  = kappa, # Maximum effect of hypoxia
+    feedback = feedback, # Set to "no feedback" for no cod-to-flounder interaction
+    model  = model
+  )
+}
 
-tibble(pars = list(list(
-  S      = 2, # Number of species
-  w      = 1, # Competition width
-  alpha0 = 1, # Baseline competition strength
-  alphaI = 1, # Reduction of competition due to imperfect overlap
-  sigma  = c(0.5, 0.5), # Species trait standard deviations
-  theta  = 5, # Width of intrinsic growth function
-  rho    = 10, # Maximum intrinsic growth rate
-  h2     = c(0.5, 0), # Heritability; set 2nd entry to 0 to stop flounder evolution
-  zstar  = 1, # Ideal body size
-  eta    = 10, # Fishing intensity
-  phi    = 1.1, # Fishing body size threshold
-  tau    = 2, # Fishing intensity transition speed
-  zeta   = 1, # Hypoxia body size threshold
-  nu     = 1.5, # Hypoxia intensity transition speed
-  kappa  = 1, # Maximum effect of hypoxia
-  feedback = "with feedback", # Set to "no feedback" for no cod-to-flounder interaction
-  model  = eqs))
-) |>
+
+
+crossing(feedback = c("with feedback", "no feedback"),
+         fishing_effort = c(0, 11)) |>
+  mutate(pars = map2(feedback, fishing_effort,
+                     \(f, e) generate_params(feedback = f, eta = e))) |>
   mutate(ninit = list(c(19.1, 17.2)), # Initial species densities
          minit = list(c(0.97, 0)), # Initial species trait means
          ic = map2(ninit, minit, c),
          tseq = list(seq(0, 100, by = 0.1))) |> # Sampling points in time
-  mutate(sol = pmap(list(pars, ic, tseq), integrate_model), .keep = "none") |>
-  unnest(sol) |>
-  mutate(n = ifelse(n > 0, n, 0)) |>
-  plot_all()
+  mutate(sol = pmap(list(pars, ic, tseq), integrate_model)) |>
+  select(feedback, fishing_effort, sol) |>
+  mutate(plt = map(sol, plot_all)) |>
+  mutate(plt = walk(plt, print))
