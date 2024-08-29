@@ -67,8 +67,24 @@ organize_results <- function(sol, pars) {
 
 # Solve ODEs and put results in a tidy table:
 integrate_model <- function(pars, ic, tseq, ...) {
-  deSolve::ode(func = pars$model, y = ic, parms = pars, times = tseq, ...) |>
-    organize_results(pars)
+  pars0 <- pars # Define parameter list that is just like the one passed in ...
+  pars0$eta <- 0 # ... but with fishing set to zero
+  # Solve equations with zero fishing:
+  sol0 <- deSolve::ode(func = pars0$model, y = ic, parms = pars0, times = tseq, ...) |>
+    organize_results(pars) |>
+    mutate(regime = "before fishing")
+  # Scrape new initial conditions, as the final state of the no-fishing solution:
+  ninit_new <- sol0 |> filter(time == max(tseq)) |> pull(n)
+  minit_new <- sol0 |> filter(time == max(tseq)) |> pull(m)
+  ic_new <- c(ninit_new, minit_new)
+  # Now solve from those initial conditions with fishing turned on:
+  sol <- deSolve::ode(func = pars$model, y = ic_new, parms = pars, times = tseq, ...) |>
+    organize_results(pars) |>
+    mutate(regime = "with fishing") |>
+    mutate(time = time + max(tseq)) # Times are after no-fishing has ended
+  sol0 |>
+    filter(time < max(time)) |> # Remove duplicated time point
+    bind_rows(sol) # Join two tables
 }
 
 
@@ -87,6 +103,7 @@ plot_density <- function(sol) {
     labs(x = "Time") +
     scale_y_continuous(name = "Density", limits = c(0, NA)) +
     scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
+    geom_vline(xintercept = max(sol$time) / 2, alpha = 0.6, linetype = "dotted") +
     theme_cod()
 }
 
@@ -96,6 +113,7 @@ plot_trait <- function(sol) {
     ggplot(aes(x = time)) +
     geom_ribbon(aes(ymin = m - sigma, ymax = m + sigma, fill = species), alpha = 0.15) +
     geom_line(aes(y = m, colour = species)) +
+    geom_vline(xintercept = max(sol$time) / 2, alpha = 0.6, linetype = "dotted") +
     labs(x = "Time", y = "Trait") +
     scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
     scale_fill_manual(values = c("cornflowerblue", "darkseagreen")) +
@@ -134,14 +152,14 @@ generate_params <- function(w = 1, alpha0 = 1, alphaI = 1, theta = 5, rho = 10,
 
 
 
-crossing(feedback = c("with feedback", "no feedback"),
-         fishing_effort = c(0, 11)) |>
+tidyr::crossing(feedback = c("with feedback", "no feedback"),
+                fishing_effort = 11) |>
   mutate(pars = map2(feedback, fishing_effort,
                      \(f, e) generate_params(feedback = f, eta = e))) |>
   mutate(ninit = list(c(19.1, 17.2)), # Initial species densities
          minit = list(c(0.97, 0)), # Initial species trait means
          ic = map2(ninit, minit, c),
-         tseq = list(seq(0, 100, by = 0.1))) |> # Sampling points in time
+         tseq = list(seq(0, 200, by = 0.1))) |> # Sampling points in time
   mutate(sol = pmap(list(pars, ic, tseq), integrate_model)) |>
   select(feedback, fishing_effort, sol) |>
   mutate(plt = map(sol, plot_all)) |>
