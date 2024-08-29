@@ -6,8 +6,51 @@ library(tidyverse)
 Q <- function(z) pnorm(sqrt(2) * z)
 
 
-cutoff <- function(n) {
-  ifelse(n < 1, (1 * (n > 0)) * (n * n * n * (10 + n * (-15 + 6 * n))), 1)
+# Compute effective intrinsic growth rates from the mean traits m and the parameter list
+eff_intr_growth <- function(m, pars) {
+  v <- pars$sigma^2 # Trait variances
+  # Components of effective intrinsic growth:
+  growth <- pars$rho * (pars$theta^2 - (pars$zstar - m)^2 - v) / pars$theta^2
+  fishing <- pars$eta * Q((m - pars$phi) / sqrt(2*v + pars$tau^2))
+  hypoxia <- pars$kappa * Q((m - pars$zeta) / sqrt(2*v + pars$nu^2))
+  growth - fishing - hypoxia
+}
+
+
+# Compute rate of trait change from growth, from the mean traits m and the parameter list
+eff_evo_growth <- function(m, pars) {
+  v <- pars$sigma^2 # Trait variances
+  # Components of trait effects of (effective) intrinsic growth:
+  growth_evo <- 2 * pars$rho * v * (pars$zstar - m) / pars$theta^2
+  fishing_evo <- pars$eta * v * exp(-(m-pars$phi)^2/(2*v + pars$tau^2)) /
+    sqrt(pi*(2*v + pars$tau^2))
+  hypoxia_evo <- pars$kappa * v * exp(-(m-pars$zeta)^2/(2*v + pars$nu^2)) /
+    sqrt(pi*(2*v + pars$nu^2))
+  growth_evo - fishing_evo - hypoxia_evo
+}
+
+
+# Competition & trait change matrices, from mean traits m and the parameter list
+competition <- function(m, pars) {
+  dm <- outer(m, m, FUN = `-`) # Difference matrix of trait means
+  v <- pars$sigma^2 # Trait variances
+  sv <- outer(v, v, FUN = `+`) # Sum matrix of trait variances
+  alpha_otherDim <- pars$alpha0 * # Competition from overlap in other traits
+    matrix(c(1, pars$alphaI, pars$alphaI, 1), 2, 2)
+  alpha <- alpha_otherDim * exp(-dm^2/(2*(sv+pars$w^2))) / sqrt(2*pi*(sv+pars$w^2))
+  # Competitive effect of cod on flounder is zeroed out for simpler model:
+  if (pars$feedback == "no feedback") alpha[2,1] <- 0
+  beta <- alpha*v*(-dm) / (sv+pars$w^2)
+  list(alpha = alpha, beta = beta)
+}
+
+
+flounder_eqb_density_no_feedback <- function(pars) {
+  v <- pars$sigma^2 # Trait variances
+  mF <- 0 # Flounder trait mean
+  b <- eff_intr_growth(mF, pars)[2] # Intrinsic growth of flounder only
+  aFF <- competition(c(mF, mF), pars)$alpha[2,2] # Self-competition of flounder
+  b / aFF # Return equilibrium density
 }
 
 
@@ -23,32 +66,12 @@ cutoff <- function(n) {
 eqs <- function(time, state, pars) {
   n <- state[1:2] # Species densities
   m <- state[3:4] # Species trait means
-  # Ingredients for effects of competition:
-  dm <- outer(m, m, FUN = `-`) # Difference matrix of trait means
-  v <- pars$sigma^2 # Trait variances
-  sv <- outer(v, v, FUN = `+`) # Sum matrix of trait variances
-  w2 <- pars$w^2 # Width of competition kernel
-  alpha_otherDim <- pars$alpha0 * # Competition from overlap in other traits
-    matrix(c(1, pars$alphaI, pars$alphaI, 1), 2, 2)
-  alpha <- alpha_otherDim * exp(-dm^2/(2*(sv+w2))) / sqrt(2*pi*(sv+w2))
-  # Competitive effect of cod on flounder is zeroed out for simpler model:
-  if (pars$feedback == "no feedback") alpha[2,1] <- 0
-  beta <- alpha*v*(-dm) / (sv+w2)
-  # Ingredients for population density effects of effective intrinsic growth:
-  growth <- pars$rho * (pars$theta^2 - (pars$zstar - m)^2 - v) / pars$theta^2
-  fishing <- pars$eta * Q((m - pars$phi) / sqrt(2*v + pars$tau^2))
-  hypoxia <- pars$kappa * Q((m - pars$zeta) / sqrt(2*v + pars$nu^2))
-  b <- growth - fishing - hypoxia
-  # Ingredients for trait effects of effective intrinsic growth:
-  growth_evo <- 2 * pars$rho * v * (pars$zstar - m) / pars$theta^2
-  fishing_evo <- pars$eta * v * exp(-(m-pars$phi)^2/(2*v + pars$tau^2)) /
-    sqrt(pi*(2*v + pars$tau^2))
-  hypoxia_evo <- pars$kappa * v * exp(-(m-pars$zeta)^2/(2*v + pars$nu^2)) /
-    sqrt(pi*(2*v + pars$nu^2))
-  g <- growth_evo - fishing_evo - hypoxia_evo
+  b <- eff_intr_growth(m, pars) # Effective intrinsic growth
+  g <- eff_evo_growth(m, pars) # Trait effects of (effective) intrinsic growth
+  coeff <- competition(m, pars) # Ingredients for effects of competition
   # Dynamical equations:
-  dndt <- n * (b - drop(alpha %*% n)) # Equations for abundances
-  dmdt <- pars$h2 * drop(g - beta %*% n) # Equations for trait means
+  dndt <- n * (b - drop(coeff$alpha %*% n)) # Equations for abundances
+  dmdt <- pars$h2 * drop(g - coeff$beta %*% n) # Equations for trait means
   list(c(dndt, dmdt)) # Return eqs by first flattening them back into a single vector
 }
 
@@ -65,26 +88,45 @@ organize_results <- function(sol, pars) {
 }
 
 
+integrate_scenario <- function(pars, ic, tseq, ...) {
+  deSolve::ode(func = pars$model, y = ic, parms = pars, times = tseq, ...) |>
+    organize_results(pars)
+}
+
+
 # Solve ODEs and put results in a tidy table:
 integrate_model <- function(pars, ic, tseq, ...) {
   pars0 <- pars # Define parameter list that is just like the one passed in ...
   pars0$eta <- 0 # ... but with fishing set to zero
   # Solve equations with zero fishing:
-  sol0 <- deSolve::ode(func = pars0$model, y = ic, parms = pars0, times = tseq, ...) |>
-    organize_results(pars) |>
+  sol0 <- integrate_scenario(pars0, ic, tseq, ...) |>
     mutate(regime = "before fishing")
   # Scrape new initial conditions, as the final state of the no-fishing solution:
   ninit_new <- sol0 |> filter(time == max(tseq)) |> pull(n)
   minit_new <- sol0 |> filter(time == max(tseq)) |> pull(m)
   ic_new <- c(ninit_new, minit_new)
   # Now solve from those initial conditions with fishing turned on:
-  sol <- deSolve::ode(func = pars$model, y = ic_new, parms = pars, times = tseq, ...) |>
-    organize_results(pars) |>
+  sol <- integrate_scenario(pars, ic_new, tseq) |>
     mutate(regime = "with fishing") |>
     mutate(time = time + max(tseq)) # Times are after no-fishing has ended
   sol0 |>
     filter(time < max(time)) |> # Remove duplicated time point
     bind_rows(sol) # Join two tables
+}
+
+
+compute_phase_no_feedback <- function(pars) {
+  nF <- flounder_eqb_density_no_feedback(pars) # Equilibrium flounder density
+  pars_no_feedback <- pars # Copy parameter list ...
+  pars_no_feedback$feedback <- "no feedback" # ... but make sure there's no feedback
+  # Generate state vector with cod density at 0 (its value doesn't matter), flounder
+  # density at nF, cod trait mean at the input m, and flounder trait mean at 0:
+  state <- function(m) c(0, nF, m, 0)
+  # Table of possible mean cod trait values:
+  tibble(m = seq(-4, 4, l = 201)) |>
+    # Compute rate of trait change at each of these possible mean trait values
+    # ([[1]] undoes the list; [3] select the cod trait mean equation):
+    mutate(dmdt = map_dbl(m, \(m) eqs(0, state(m), pars_no_feedback)[[1]][3]))
 }
 
 
@@ -121,8 +163,27 @@ plot_trait <- function(sol) {
 }
 
 
-plot_all <- function(sol) {
-  cowplot::plot_grid(plot_density(sol), plot_trait(sol), ncol = 1)
+plot_phase_no_feedback <- function(pars) {
+  compute_phase_no_feedback(pars) |>
+    ggplot(aes(x = m, y = dmdt)) +
+    geom_hline(yintercept = 0, alpha = 0.4, linetype = "dashed") +
+    geom_line(colour = "cornflowerblue") +
+    labs(x = expression(paste("Body size (", mu, ")")),
+         y = expression(paste("Rate of change, ", d~mu/d~t))) +
+    theme_cod()
+}
+
+
+plot_all <- function(sol, pars) {
+  pars0 <- pars
+  pars0$eta <- 0
+  cowplot::plot_grid(
+    plot_density(sol),
+    plot_phase_no_feedback(pars0),
+    plot_trait(sol),
+    plot_phase_no_feedback(pars),
+    ncol = 2
+  )
 }
 
 
@@ -152,15 +213,15 @@ generate_params <- function(w = 1, alpha0 = 1, alphaI = 1, theta = 5, rho = 10,
 
 
 
-tidyr::crossing(feedback = c("with feedback", "no feedback"),
-                fishing_effort = 11) |>
+tibble(feedback = c("with feedback", "no feedback"),
+       fishing_effort = 11) |>
   mutate(pars = map2(feedback, fishing_effort,
-                     \(f, e) generate_params(feedback = f, eta = e))) |>
+                     \(f, e) generate_params(feedback = f, eta = e, alphaI = 1))) |>
   mutate(ninit = list(c(19.1, 17.2)), # Initial species densities
          minit = list(c(0.97, 0)), # Initial species trait means
          ic = map2(ninit, minit, c),
          tseq = list(seq(0, 200, by = 0.1))) |> # Sampling points in time
   mutate(sol = pmap(list(pars, ic, tseq), integrate_model)) |>
-  select(feedback, fishing_effort, sol) |>
-  mutate(plt = map(sol, plot_all)) |>
+  select(feedback, fishing_effort, pars, sol) |>
+  mutate(plt = map2(sol, pars, plot_all)) |>
   mutate(plt = walk(plt, print))
