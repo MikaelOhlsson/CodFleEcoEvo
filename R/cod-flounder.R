@@ -94,6 +94,26 @@ integrate_scenario <- function(pars, ic, tseq, ...) {
 }
 
 
+# # Solve ODEs and put results in a tidy table:
+# integrate_model <- function(pars, ic, tseq, ...) {
+#   pars0 <- pars # Define parameter list that is just like the one passed in ...
+#   pars0$eta <- 0 # ... but with fishing set to zero
+#   # Solve equations with zero fishing:
+#   sol0 <- integrate_scenario(pars0, ic, tseq, ...) |>
+#     mutate(regime = "before fishing")
+#   # Scrape new initial conditions, as the final state of the no-fishing solution:
+#   ninit_new <- sol0 |> filter(time == max(tseq)) |> pull(n)
+#   minit_new <- sol0 |> filter(time == max(tseq)) |> pull(m)
+#   ic_new <- c(ninit_new, minit_new)
+#   # Now solve from those initial conditions with fishing turned on:
+#   sol <- integrate_scenario(pars, ic_new, tseq) |>
+#     mutate(regime = "with fishing") |>
+#     mutate(time = time + max(tseq)) # Times are after no-fishing has ended
+#   sol0 |>
+#     filter(time < max(time)) |> # Remove duplicated time point
+#     bind_rows(sol) # Join two tables
+# }
+
 # Solve ODEs and put results in a tidy table:
 integrate_model <- function(pars, ic, tseq, ...) {
   pars0 <- pars # Define parameter list that is just like the one passed in ...
@@ -106,12 +126,23 @@ integrate_model <- function(pars, ic, tseq, ...) {
   minit_new <- sol0 |> filter(time == max(tseq)) |> pull(m)
   ic_new <- c(ninit_new, minit_new)
   # Now solve from those initial conditions with fishing turned on:
-  sol <- integrate_scenario(pars, ic_new, tseq) |>
+  sol1 <- integrate_scenario(pars, ic_new, tseq) |>
     mutate(regime = "with fishing") |>
     mutate(time = time + max(tseq)) # Times are after no-fishing has ended
+  # Scrape new initial conditions, as the after-state of the fishing solution:
+  ninit_after <- sol1 |> filter(time == 2*max(tseq)) |> pull(n)
+  minit_after <- sol1 |> filter(time == 2*max(tseq)) |> pull(m)
+  ic_after <- c(ninit_after, minit_after)
+  
+  pars0 <- pars # Define parameter list that is just like the one passed in ...
+  pars0$eta <- 0 # ... but with fishing set to zero
+  # Solve equations with zero fishing after fishing scenario:
+  sol <- integrate_scenario(pars0, ic_after, tseq) |>
+    mutate(regime = "after fishing") |>
+    mutate(time = time + 2*max(tseq)) # Times are after no-fishing has ended
   sol0 |>
     filter(time < max(time)) |> # Remove duplicated time point
-    bind_rows(sol) # Join two tables
+    bind_rows(sol1, sol) # Join two tables
 }
 
 
@@ -145,7 +176,7 @@ plot_density <- function(sol) {
     labs(x = "Time") +
     scale_y_continuous(name = "Density", limits = c(0, NA)) +
     scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
-    geom_vline(xintercept = max(sol$time) / 2, alpha = 0.6, linetype = "dotted") +
+    geom_vline(xintercept = c(max(sol$time) / 3, 2* max(sol$time) / 3), alpha = 0.6, linetype = "dotted") +
     theme_cod()
 }
 
@@ -155,7 +186,7 @@ plot_trait <- function(sol) {
     ggplot(aes(x = time)) +
     geom_ribbon(aes(ymin = m - sigma, ymax = m + sigma, fill = species), alpha = 0.15) +
     geom_line(aes(y = m, colour = species)) +
-    geom_vline(xintercept = max(sol$time) / 2, alpha = 0.6, linetype = "dotted") +
+    geom_vline(xintercept = c(max(sol$time) / 3, 2* max(sol$time) / 3), alpha = 0.6, linetype = "dotted") +
     labs(x = "Time", y = "Trait") +
     scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
     scale_fill_manual(values = c("cornflowerblue", "darkseagreen")) +
@@ -187,7 +218,7 @@ plot_all <- function(sol, pars) {
 }
 
 
-generate_params <- function(w = 1, alpha0 = 1, alphaI = 1, theta = 5, rho = 10,
+generate_params <- function(w = 1, alpha0 = 1, alphaI = 1, theta = 5, rho = 5,
                             zstar = 1, eta = 0, phi = 1.1, tau = 2, zeta = 1, nu = 1.5,
                             kappa = 1, sigma = c(0.5, 0.5), h2 = c(0.5, 0),
                             feedback = "with feedback", model = eqs) {
@@ -212,9 +243,9 @@ generate_params <- function(w = 1, alpha0 = 1, alphaI = 1, theta = 5, rho = 10,
 }
 
 
-
+# Overwrites generate_param values for feedback, fishing effort (eta), and alphaI
 tibble(feedback = c("with feedback", "no feedback"),
-       fishing_effort = 11) |>
+       fishing_effort = 10) |>
   mutate(pars = map2(feedback, fishing_effort,
                      \(f, e) generate_params(feedback = f, eta = e, alphaI = 1))) |>
   mutate(ninit = list(c(19.1, 17.2)), # Initial species densities
@@ -222,6 +253,6 @@ tibble(feedback = c("with feedback", "no feedback"),
          ic = map2(ninit, minit, c),
          tseq = list(seq(0, 200, by = 0.1))) |> # Sampling points in time
   mutate(sol = pmap(list(pars, ic, tseq), integrate_model)) |>
-  select(feedback, fishing_effort, pars, sol) |>
+  select(feedback, fishing_effort, pars, sol) |> 
   mutate(plt = map2(sol, pars, plot_all)) |>
   mutate(plt = walk(plt, print))
