@@ -1,9 +1,9 @@
 ---
 title: "Cod-Flounder empirical data"
-date: "05/21/2024"
+date: "10/16/2024"
 output: 
   html_document:
-    code_folding: show
+    code_folding: hide
     toc: true
     toc_depth: 3
     self_contained: true
@@ -16,8 +16,15 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE, cache = FALSE, message = FALSE)
 library(factoextra)
 library(ggh4x)
+library(ggpubr)
 library(cowplot)
+library(RColorBrewer)
 library(tidyverse)
+library(lubridate)
+library(raster)
+library(patchwork)
+library(abdiv) #Morisita fn
+
 theme_set(theme_bw())
 theme_update(panel.grid = element_blank(),
              strip.background = element_rect(fill = "white", colour = "black"))
@@ -27,312 +34,973 @@ theme_update(panel.grid = element_blank(),
 
 ```{r Loading, message = FALSE}
 # Stomach data
-stom_data <- read_csv("../data/stom_data_light.csv") %>%
-  mutate(predator_length_class = ifelse(predator_name == "cod",
-                                  paste0("cod_", cut(predator_length_cm, c(-Inf, 20,30,40,50,Inf))), 
-                                  paste0("flounder_", cut(predator_length_cm, c(-Inf, 20,30,Inf)))))
+## Extract relevant data from full data set
+# stom_data_light <- read_csv("../data/stomach_data/full_stomach_data_22.10.10.csv") %>% 
+#   dplyr::select(year, quarter, subdiv, predator_latin_name, predator_lengh_cm,
+#                 predator_weight_g, prey_latin_name, prey_total_no, prey_weight_g,
+#                 predator_name, unique_pred_id) %>%
+#   rename(predator_length_cm = predator_lengh_cm) %>%
+#   filter(quarter %in% c(1,4) & subdiv %in% c(25,28) & predator_name %in%  c("cod", "flounder"))
+#  write_csv(x = stom_data_light, file = "../data/stom_data_light.csv")
 
-# Adding taxonomic groups as well as a fish/invertebrate prey type.
-    species_groups <-
-      read_csv("../data/taxa_groups.csv")
-    
-    stom_data <- stom_data %>%
-      left_join(species_groups, by = c("prey_latin_name" = "taxa")) %>% 
-      mutate(prey_type = case_when(species_group == "Clupeidae" ~ "Fish",
+#New and reworked stomach data, aggregated version, 2015-2022
+stom_data <- read_csv("../data/stomach_data/aggregated_stomach_data.csv") %>% 
+  filter(subdiv != 24 & 
+           species %in% c("Cod", "Flounder")) %>% 
+  mutate(predator_length_class = ifelse(species == "Cod",
+                                        paste0("cod_", cut(pred_length_cm, c(-Inf,10, 15, 20, 25, 30, 35, 40, 45, 50,Inf))), 
+                                        paste0("flounder_", cut(pred_length_cm, c(-Inf, 20,30,Inf)))))
+
+#Old stomach data, species level, 1963-2020
+old_stom_data <- read_csv("../data/stom_data_light.csv") %>%
+  filter(!is.na(predator_length_cm)) %>%
+  mutate(predator_length_class = ifelse(predator_name == "cod",
+                                        paste0("cod_", cut(predator_length_cm, c(10, 15, 20, 25, 30, 40, 50,Inf))),
+                                        paste0("flounder_", cut(predator_length_cm, c(-Inf, 20,30,Inf)))))
+# 
+#   
+# # Adding taxonomic groups as well as a fish/invertebrate prey type.
+species_groups <-
+  read_csv("../data/taxa_groups.csv") %>% #filter(str_detect(taxa, "Clupea"))
+  mutate(species_group = case_when(str_detect(taxa, "Mysi") ~ "Mysidae",
+                                   str_detect(taxa, "Gammarus") ~ "Amphipoda",
+                                   TRUE ~ species_group)) %>%
+    bind_rows(tibble(taxa = c("Pontoporeia affinis",
+                              "Clupea",
+                              "Pomatoschistus",
+                              "Osmerus eperlanus",
+                              "Bylgides"), 
+                     species_group = c("Amphipoda",
+                                       "Clupeidae",
+                                       "Other fish",
+                                       "Other fish",
+                                       "Polychaeta")))
+#     
+old_stom_data <- old_stom_data %>% 
+  mutate(prey_latin_name = case_when(prey_latin_name == "Gammarus" ~ "Gammarus sp.",
+                                   TRUE ~ prey_latin_name)) %>%
+  left_join(species_groups, by = c("prey_latin_name" = "taxa")) %>%
+  mutate(prey_type = case_when(species_group == "Clupeidae" ~ "Fish",
                                species_group == "Gobiidae" ~ "Fish",
                                species_group == "Gadiformes" ~ "Fish",
                                species_group == "Other fish" ~ "Fish",
-                               TRUE ~ "Invertebrate"))
+                               TRUE ~ "Invertebrate")) 
+
+dm <- read_csv(paste0("../data/old_stomach_data.csv")) 
+
+shape <- shapefile("../data/shapefiles/ICES-StatRec-mapto-ICES-Areas/StatRec_map_Areas_Full_20170124.shp")
+  pts <- SpatialPoints(cbind(dm$lon, dm$lat), 
+                     proj4string = CRS(proj4string(shape)))
+  dm$subdiv <- over(pts, shape)$Area_27
 
 # Biomass index
 cod_fle_index <- read_csv("../data/cod_fle_index.csv")
 
-# Catch density per length cod and flounder (superfluous data removed)
+# Catch density per length cod and flounder 
 #read_csv("../data/catch_by_length.csv") %>% 
-#select(density, year, quarter, haul_id, sub_div, length_cm, species) %>% 
-#filter(sub_div %in% c(25,28) & density > 0 & species %in% c("cod", "flounder")) %>% 
-#write_csv("cod_fle_size_light.csv")
-cod_fle_size <- read_csv("../data/cod_fle_size_light.csv") 
+  #select(density, year, quarter, haul_id, sub_div, length_cm, species) %>% 
+  #filter(sub_div %in% c(25,28) & density > 0 & species %in% c("cod", "flounder")) %>% 
+  #write_csv("cod_fle_size_light.csv")
+cod_fle_size <- read_csv("../data/cod_fle_size_light.csv")
 
+# CPUE per length per haul per hour (ICES DATRAS, dl 2024-10-14)
+# Updated data of the above catch_by_length.csv, would perhaps need standardization based on gear first?
+# cod_fle_size <- read_csv("../data/cpue_length_area.csv") %>% #Some formatting to fit code for old data
+#   filter(Area %in% c(25:28) & LngtClass > 0) %>%
+#   mutate(Species = case_when(Species == "Gadus morhua" ~ "cod",
+#                              Species == "Platichthys flesus" ~ "flounder"),
+#          LngtClass = LngtClass * 0.1) %>%
+#   rename(species = Species, 
+#          length_cm = LngtClass,
+#          year = Year, quarter = Quarter,
+#          density = CPUE_number_per_hour,
+#          sub_div = Area)
+# 
+
+
+# Age-Length data (ICES DATRAS Age Length Key, dl 2024-10-11)
+age_length_df <- read_csv("../data/age_length_2024-10-11.csv")
+#trawl_data <- read_csv("../data/trawl_data.csv")
 ```
 
+# Body size dist 95 quantile
 
-# Cod-Flounder diet distance
+Mean and 95-percentile body length data for cod and flounder. 
 
-Based on number of prey species found in the stomach content, the diet of different size classes of cod and flounder are compared. The bigger the distance (red), the more different the diet. Can be altered to instead count species group items for an aggregated diet comparison.
-
-```{r diet_distance, fig.width=7, fig.height=2.75, out.width="70%"}
-subdiv_dist_all <- function(df){
-  subdiv_list <- c(25,28) 
-  
-  merge_dist <- tibble()
-
-
-    for(i in subdiv_list){
-    prey_df <- df %>% 
-      filter(!is.na(predator_length_cm) &
-               cruise %in% c("BITS", "BITS-1", "BITS-2")) %>% # Standardized fishing methods)  
-      mutate(predator_length_class = as.factor(predator_length_class)) %>% 
-      filter(subdiv == i) %>% 
-      group_by(predator_length_class) %>% 
-      count(prey_latin_name, .drop = FALSE) %>% 
-      ungroup() %>% #alt: "prey" / "species_group"
-      pivot_wider(names_from = prey_latin_name, 
-                  values_from = n, 
-                  values_fill = 0)
-      
-      pvpdf <- data.frame(prey_df[,-1])
-      rownames(pvpdf) <- pull(prey_df[,1])
-      
-      pvpdist <- get_dist(pvpdf, method = "spearman") #Spearman distance less dependent on normal distribution
-     
-      pvpdist <- pvpdist %>% 
-        as.matrix() %>% 
-        .[6:8,1:5] %>% 
-        as_tibble(rownames = "flounder") %>% 
-        pivot_longer(names_to = "cod", cols = 2:6) %>% 
-        mutate(subdiv = as.character(i), year = "all")
-      
-      merge_dist <- bind_rows(merge_dist, pvpdist)
-    }
-  return(merge_dist)
-}
-
-gg_dist <- subdiv_dist_all(stom_data) %>%
-  mutate(flounder = case_when(
-    flounder == "flounder_(-Inf,20]" ~ "< 20",
-    flounder == "flounder_(20,30]" ~ "20-30",
-    flounder == "flounder_(30, Inf]" ~ "30+")) %>%
-mutate(cod = case_when(
-    cod == "cod_(-Inf,20]" ~ "< 20",
-    cod == "cod_(20,30]" ~ "20-30",
-    cod == "cod_(30,40]" ~ "30-40",
-    cod == "cod_(40,50]" ~ "40-50",
-    cod == "cod_(50, Inf]" ~ "50+")) %>%
-  ggplot() +
-  aes(x = cod, y = flounder, fill = value) + 
-  geom_tile() + 
-  scale_fill_gradient2(midpoint = (0.35+1.32)/2,
-                       low = "#00AFBB", mid = "white", high = "#FC4E07") +
-  facet_grid(.~subdiv, scales = "free") +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1)) +
-  labs(fill = "Dietary\ndistance", 
-       x = "Cod body length (cm)", y = "Flounder body length (cm)")
-gg_dist
-```
-
-# Cod and flounder biomass
-
-From a biomass perspective, cod is predominant over flounder in subdivision 25, whereas the opposite relationship is true in subdivision 28. This can be considered aligned with the pattern in diet overlap, where in subdivision 25, cod diet is more similar to flounder diet.   
-
-Note that biomass estimates here are actually the relative abundances instead of absolutes.
-
-```{r Cod_Fle_Index, out.width="100%", fig.width=12, fig.height=5}
-gg_biomass <- cod_fle_index %>% 
-  dplyr::filter(sub_div %in% c(25,28)) %>% 
-  dplyr::select(-1) %>% 
-  mutate(species = case_when(species == "cod" ~ "Cod",
-                             species == "fle" ~ "Flounder")) %>%
-    ggplot() +
-  aes(x = year, y = est_t, ymax = upr_t, ymin = lwr_t, 
-      color = species, fill = species) +
-  geom_line(linewidth = 1) +
-  geom_ribbon(alpha = 0.2, color = NA) +
-  geom_blank(aes(x = year, y = 11500)) +
-  scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
-  scale_fill_manual(values = c("cornflowerblue", "darkseagreen")) +
-  facet_wrap(.~sub_div, scales = "free") +
-  labs(x = "Year", y = "Biomass estimate (tonnes)", color = "Species", fill = "Species")
-gg_biomass
-```
-
-
-### Fig. 3 Biomass and dietary distance
-
-```{r}
-gg_bio_diet <- plot_grid(gg_biomass, plot_grid(gg_dist, NULL, ncol = 2, rel_widths = c(0.965,0.035)), ncol = 1, labels = c("A", "B"))
-ggsave(plot = gg_bio_diet, filename = "../fig/fig3.pdf", width = 6.6, height = 5)
-```
-
-## Body size distribution
-
-Data is available as density per length class for each haul. In this temporary repository, data for the length classes is limited to 15-75 cm.
-
-First, a look at number of hauls for the respective sub divisions.
-
-```{r hauls, out.width = "100%", fig.width = 9, fig.height = 4}
-cod_fle_size %>%
-  filter(species %in% c("cod", "flounder")) %>%
-  filter(sub_div %in% c(25, 28) & quarter %in% c(1,4)) %>% 
-  group_by(year, sub_div) %>% 
-  distinct(haul_id) %>% 
-  ungroup(sub_div) %>% 
-  count(sub_div) %>%
-  ungroup() %>%
-  ggplot() +
-    aes(x = as.factor(year), y = n, ymax = n, ymin = 0, group = sub_div) +
-    geom_ribbon(alpha = 0.4, color = "black") +
-    facet_wrap(.~sub_div) +
-    labs(y = "Number of hauls", color = "subdiv", fill = "subdiv") +
-    theme(axis.text.x = element_text(angle=45, hjust = 1))
-```
-
-Due to the somewhat limited data, years are aggregated as the brackets below. Also, due to the difference in sampling frequency, we calculate the proportional biomass per length class instead of the actual density. Rolling averages for the length classes is also used to smooth the low sampling in the earlier year brackets. 
-
-```{r}
+```{r 95quant, fig.height = 2.8, fig.width = 6.5, out.width="80%"}
 # First, aggregating
-year_brackets <- c(1992, 2000, 2010, 2020)
+#year_brackets <- c(1992, 2000, 2010, 2020)
 
-d2 <- cod_fle_size %>%
+
+dens_agg <- cod_fle_size %>% 
   filter(species %in% c("cod", "flounder")) %>%
-  filter(sub_div %in% c(25, 28)) %>%
-mutate(length_cm = round(length_cm, digits = 0)) %>%
-  mutate(year_cat = cut(year, year_brackets, dig.lab = 10)) %>% 
-  group_by(year_cat, sub_div, species, length_cm, quarter) %>% #year_cat
+  #filter(sub_div != 24) %>%
+  mutate(length_cm = round(length_cm, digits = 0)) %>%
+  #mutate(year_cat = cut(year, year_brackets, dig.lab = 10)) %>% 
+  group_by(year, species, length_cm) %>% #year_cat
   summarise(density = sum(density)) %>%
   ungroup()
 
 # Total density of hauls, used to calculate proportional density 
-dsum <- cod_fle_size %>%
+dens_sum <- cod_fle_size %>%
   filter(species %in% c("cod", "flounder")) %>%
-  filter(sub_div %in% c(25, 28)) %>%
+  #filter(sub_div != 24) %>%
   mutate(length_cm = round(length_cm, digits = 0)) %>%
-  mutate(year_cat = cut(year, year_brackets, dig.lab = 10)) %>% 
-  group_by(year_cat, sub_div, species, quarter) %>% #year_cat
+  #mutate(year_cat = cut(year, year_brackets, dig.lab = 10)) %>% 
+  group_by(year, species) %>% #year_cat
   summarise(tot_density = sum(density)) %>%
   ungroup()
- 
+
 # Proportional density
-d3 <- d2 %>%
-  left_join(dsum, by = c("year_cat", "sub_div", "species", "quarter")) %>% 
+dens_prop <- dens_agg %>%
+  left_join(dens_sum, by = c("year", "species")) %>% 
   mutate(prop = density / tot_density)
-  # group_by(year_cat, species, sub_div) %>% 
-  # summarise(prop_tot = sum(prop)) %>%
-  # ungroup()
-  
+
 # Q4 Mean length based on density of length classes
-  dmean_q4 <- d3 %>%
-  filter(length_cm > 0 & quarter %in% c(4)) %>%
-  mutate(year_cat = case_when(
-    year_cat == "(1992,2000]" ~ "1993-2000",
-    year_cat == "(2000,2010]" ~ "2001-2010",
-    year_cat == "(2010,2020]" ~ "2011-2020")) %>%
+dens_mean <- dens_prop %>%
+  filter(length_cm > 0) %>%
+  # mutate(year_cat = case_when(
+  #   year_cat == "(1992,2000]" ~ "1993-2000",
+  #   year_cat == "(2000,2010]" ~ "2001-2010",
+  #   year_cat == "(2010,2020]" ~ "2011-2020")) %>%
   mutate(n = ceiling(density)) %>% 
-  group_by(species, year_cat, sub_div, quarter) %>%
+  group_by(species, year) %>%
   summarise(meanlength = sum(length_cm * n) / sum(n)) %>%
   ungroup()
-  
-  # Q1 Mean length based on density of length classes
-  dmean_q1 <- d3 %>%
-  filter(length_cm > 0 & quarter %in% c(1)) %>%
-  mutate(year_cat = case_when(
-    year_cat == "(1992,2000]" ~ "1993-2000",
-    year_cat == "(2000,2010]" ~ "2001-2010",
-    year_cat == "(2010,2020]" ~ "2011-2020")) %>%
-  mutate(n = ceiling(density)) %>% 
-  group_by(species, year_cat, sub_div, quarter) %>%
-  summarise(meanlength = sum(length_cm * n) / sum(n)) %>%
-  ungroup()
-```
 
-# Fig. 4 Plotting length distributions
-
-Quarter 4 data, for subdivisions 25 and 28, length visualized as moving 3-year average. Visual length cutoff at 75 cm.
-
-```{r plotdensity, out.width="80%", fig.width = 5, fig.height = 4}
-pally <- "Dark2"
-gg_length_dist <- d3 %>%
-  filter(length_cm > 0 & quarter %in% c(4)) %>%
-  # rollprop = Moving 3 year average
-  mutate(rollprop = stats::filter(prop, filter = rep(1/3, 3), sides = 2)) %>%
-  mutate(year_cat = case_when(
-    year_cat == "(1992,2000]" ~ "1993-2000",
-    year_cat == "(2000,2010]" ~ "2001-2010",
-    year_cat == "(2010,2020]" ~ "2011-2020")) %>%  
-  ggplot() + 
-  aes((length_cm), ymin = 0, ymax = rollprop, 
-      fill = as.factor(species), color = as.factor(species)) +
-  geom_ribbon(alpha = 0.5) +
- geom_vline(data = dmean_q4,
-aes(xintercept = meanlength,
-    color = fct_relevel(species, c("flounder", "cod"))), linewidth = 1) +
-  facet_grid(year_cat ~ sub_div) +  
-  scale_color_brewer(palette = pally) +
-  scale_fill_brewer(palette = pally) +
-  scale_y_continuous(breaks = c(0,0.05,0.1), expand = expansion(mult = c(0,0.05))) +
-  scale_x_continuous(expand = expansion(mult = c(0,00))) +
-  coord_cartesian(xlim = c(15,75)) +
-  labs(#subtitle = "Lines indicate mean and 95% quantiles (dashed)", 
-       x = "Length (cm)", y = "Biomass Proportion", color = "Species", fill = "Species") + 
-  theme(legend.position = "bottom") +
-  NULL
-gg_length_dist
-ggsave(filename = "../fig/fig4.pdf", plot = gg_length_dist, width = 5, height = 4)
-```
-
-# Fig. S2 Plotting length distributions
-
-Quarter 1 data, for subdivisions 25 and 28, length visualized as moving 3-year average. Visual length cutoff at 75 cm.
-
-```{r plotdensity_q1, out.width="80%", fig.width = 5, fig.height = 4}
-pally <- "Dark2"
-gg_length_dist_q1 <- d3 %>%
-  filter(length_cm > 0 & quarter %in% c(1)) %>%
-  # rollprop = Moving 3 year average
-  mutate(rollprop = stats::filter(prop, filter = rep(1/3, 3), sides = 2)) %>%
-  mutate(year_cat = case_when(
-    year_cat == "(1992,2000]" ~ "1993-2000",
-    year_cat == "(2000,2010]" ~ "2001-2010",
-    year_cat == "(2010,2020]" ~ "2011-2020")) %>%  
-  ggplot() + 
-  aes((length_cm), ymin = 0, ymax = rollprop, 
-      fill = as.factor(species), color = as.factor(species)) +
-  geom_ribbon(alpha = 0.5) +
- geom_vline(data = dmean_q1,
-aes(xintercept = meanlength,
-    color = fct_relevel(species, c("flounder", "cod"))), linewidth = 1) +
-  facet_grid(year_cat ~ sub_div) +  
-  scale_color_brewer(palette = pally) +
-  scale_fill_brewer(palette = pally) +
-  scale_y_continuous(breaks = c(0,0.05,0.1), expand = expansion(mult = c(0,0.05))) +
-  scale_x_continuous(expand = expansion(mult = c(0,00))) +
-  coord_cartesian(xlim = c(15,75)) +
-  labs(#subtitle = "Lines indicate mean and 95% quantiles (dashed)", 
-       x = "Length (cm)", y = "Biomass Proportion", color = "Species", fill = "Species") + 
-  theme(legend.position = "bottom") +
-  NULL
-gg_length_dist_q1
-ggsave(filename = "../fig/figs2.pdf", plot = gg_length_dist, width = 5, height = 4)
-```
-
-## Fig. S3 Dietary proportions
-
-Plot showing small cod's (15-40 cm) dietary proportion of fish and invertebrates. X-facets show which quarter data was collected, and Y-facets show subdivisions. Data is somewhat limited for especially subdivision 25, but hints a local dietary shift in subdivision 28 in the recent years during Q1. 
-
-```{r PreyComp_DF, out.width="100%", fig.width = 7, fig.height = 3}
-gg_cod_proportional_fish <- stom_data %>%  
-  filter(quarter %in% c(1,4) & 
-           !is.na(species_group) &
-           year >= 1976 & 
-           predator_length_cm %in% 15:40 &
-           subdiv %in% c(25,28)
-         ) %>% 
-  group_by(predator_name, subdiv, year, quarter) %>%
-  count(prey_type) %>%
+gg_size_change <- dens_prop %>% 
+  filter(density > 0) %>% 
+  group_by(year, species) %>% 
+  mutate(cumprop = cumsum(prop)) %>% 
+  filter(abs(cumprop-0.95) == min(abs(cumprop-0.95))) %>% 
+  arrange(year, species, cumprop) %>% 
   ungroup() %>%
-  mutate(pred_div = paste0(predator_name, "_", subdiv)) %>%
-  mutate(pred_div  = factor(pred_div)) %>%
-  filter(predator_name == "cod") %>% 
+  left_join(dens_mean) %>%
+  rename(p95_length = length_cm,
+         mean_length = meanlength) %>%
+  pivot_longer(cols = c(p95_length, mean_length), 
+               names_to = "length_var", 
+               values_to = "length_val") %>%
+  mutate(length_var = case_when(length_var == "mean_length" ~ "Mean",
+                                length_var == "p95_length" ~ "95 percentile"),
+         species = case_when(species == "cod" ~ "Cod",
+                                species == "flounder" ~ "Flounder")) %>%
+#  filter(species == "cod") %>%
   ggplot() +
-    aes(x = year, y = n, fill = prey_type) +
-    geom_bar(stat = "identity", position = "fill") + #
-    scale_fill_manual(values = c("steelblue", "goldenrod"))  + 
-    scale_x_continuous(expand = expansion(add = c(0.25,0.25))) +
-    facet_grid(subdiv~quarter, scales = "free_x", space = "free_x") +
-    labs(y = "Proportional diet", x = "Year", fill = "Prey type") 
-gg_cod_proportional_fish
-ggsave(filename = "../fig/figs3.pdf", plot = gg_cod_proportional_fish, width = 8, height = 3)
+  aes(x = year, y = length_val, color = length_var) +
+  geom_point() +
+  geom_smooth(formula = y~poly(x,2), method = "lm", se = F) +
+  scale_color_manual(values = c(brewer.pal(n = 8, name = "Dark2")[2:3])) +
+  scale_y_continuous(limits = c(20,70)) +
+  facet_wrap(.~species) + 
+  labs(x = "Year", y = "Length (cm)", color = "Length Variable") +
+  theme(legend.position = "bottom",
+        legend.margin = margin(t = -10),
+        strip.text = element_blank()) +
+  NULL
+#gg_size_change
+  #ggsave("../fig/size_change.pdf", gg_size_change, height=2.8, width=5)
+```
+
+# Cod and flounder biomass
+
+Note that biomass estimates here are actually the relative abundances instead of absolutes.
+
+```{r Cod_Fle_Index, out.width="80%", fig.width=6, fig.height=6}
+gg_biomass <- cod_fle_index %>%
+  dplyr::select(-1) %>%
+  ggplot() +
+  aes(x = year, y = est_t/1000, ymax = upr_t/1000, ymin = lwr_t/1000) + #,
+  geom_line(linewidth = 1) +
+  geom_ribbon(alpha = 0.2, color = NA) +
+  # scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
+  # scale_fill_manual(values = c("cornflowerblue", "darkseagreen")) +
+  scale_x_continuous(limits = c(1991,2024)) +
+  facet_wrap(.~species) +
+  labs(x = "Year", y = "Biomass estimate (1000 t)", color = "Species", fill = "Species") +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+#gg_biomass
+gg_size_biomass <- plot_grid(gg_biomass, gg_size_change, 
+                             ncol = 1, 
+                             rel_heights = c(0.45,0.55), 
+                             labels = c("A", "B")
+)
+gg_size_biomass
+#ggsave("../fig/size_biomass.pdf", gg_size_biomass, height = 5, width = 6)
+```
+
+# Historical cod dietary distance to flounder
+
+Cod diet includes years 1963--2020. Flounder diet limited to years 2015-2020. Testing each year interval separately, aggregating weights for each type of food from year to interval, and then calculates the proportion of each diet type for each size class. Further divided into first and fourth quarters.
+
+## Count data of number of cod stomach samples per size class
+
+```{r  fig.height = 7, fig.width = 9, out.width="100%"}
+old_stom_data %>% 
+  filter(predator_name == "cod") %>% 
+  group_by(year, predator_length_class, quarter) %>% 
+  distinct(unique_pred_id) %>% 
+  ungroup(predator_length_class) %>% 
+  count(predator_length_class) %>% 
+  ggplot() + 
+  aes(x = year, y = n, fill = predator_length_class) + 
+  geom_col(position = "stack") + 
+  scale_fill_brewer(palette = "Paired") +
+  scale_x_continuous(breaks = scales::extended_breaks(n = 60  / 5), 
+                     expand = expansion(add = 0.5)) +
+  facet_wrap(quarter~., ncol = 1) +
+  labs(fill = "Cod length (cm)", x = "Year", y = "Number of stomach samples") +
+  NULL
+```
+
+## Spearman Distance
+
+(old data)
+
+```{r fig.height = 9.5, fig.width = 6.5, out.width="70%"}
+stom_dist_hist <- function(){
+  #Somewhat arbitrary intervals to aggregate data
+  year_intervals <- list(1963:1978, 
+                         1979:1990, 
+                         1990:2000,
+                         2001:2010,
+                         2011:2014,
+                         2015:2020)
+  
+  #Tibble to gather results in
+  stom_dist <- tibble()
+  
+  
+  for(i in 1:length(year_intervals)){
+    for(q in c(1,4)) {
+      stom_tmp <- tibble()
+      
+      stom_tmp <- old_stom_data %>% 
+        filter(!is.na(species_group) & 
+                 ifelse(predator_name == "cod", 
+                        year %in% year_intervals[[i]], 
+                        is.numeric(year)) &
+                 quarter == q) %>% 
+        # mutate(FultonK = 100 * predator_weight_g / (predator_length_cm ^3))
+        group_by(predator_name, predator_length_class) %>% 
+        #mutate(sum_weight = sum(prey_weight_g, na.rm = T)) %>% #Weight of all prey of the specific size class
+        group_by(predator_name, predator_length_class, species_group) %>% #, sum_weight
+        summarise(w_sum = sum(prey_weight_g, na.rm = T)) %>% #Prey weights of each prey type 
+        #mutate(prop_weight = w_sum / sum_weight) %>% #Proportional weight
+        ungroup() %>%
+        #dplyr::select(-sum_weight, -w_sum) %>% #Wide format for get_dist function
+        pivot_wider(names_from = species_group,
+                    values_from = w_sum, 
+                    values_fill = 0) %>% 
+        ungroup() %>% 
+        dplyr::select(-predator_name)
+      
+      #Number of cod size classes (organizing matrix for plotting purposes)
+      ncc <- (stom_tmp %>% 
+                dplyr::select(predator_length_class) %>% 
+                distinct() %>% 
+                nrow()) - 3
+      
+      pvpdf <- stom_tmp %>% 
+        dplyr::select(-predator_length_class) %>% 
+        data.frame()
+      rownames(pvpdf) <- stom_tmp %>% pull(predator_length_class)
+      
+      pvpdist <- get_dist(pvpdf, method = "spearman") %>% #Spearman distance more robust to outliers
+        as.matrix() %>% 
+        .[(ncc+1):(ncc+3),1:ncc] %>% 
+        as_tibble(rownames = "flounder") %>% 
+        pivot_longer(names_to = "cod", cols = 2:(ncc+1)) %>%
+        mutate(y_interval = paste0(min(year_intervals[[i]]), 
+                                   "-", 
+                                   max(year_intervals[[i]])),
+               quarter = q)
+      
+      stom_dist <- stom_dist %>% 
+        bind_rows(pvpdist)
+      
+    } # year_interval loop
+  }
+  stom_dist 
+}
+
+gg_stom_hist <- stom_dist_hist() %>% 
+    mutate(flounder = case_when(
+    flounder == "flounder_(-Inf,20]" ~ "< 20",
+    flounder == "flounder_(20,30]" ~ "20-30",
+    flounder == "flounder_(30, Inf]" ~ "30+")) %>%
+  mutate(cod = case_when(
+    cod == "cod_(-Inf,10]" ~ "< 10",
+    cod == "cod_(10,15]" ~ "10-15",
+    cod == "cod_(15,20]" ~ "15-20",
+    cod == "cod_(20,25]" ~ "20-25",
+    cod == "cod_(25,30]" ~ "25-30",
+    cod == "cod_(30,40]" ~ "30-40",
+    cod == "cod_(40,50]" ~ "40-50",
+    cod == "cod_(50,Inf]" ~ "50+")) %>%
+  filter(!is.na(cod)) %>%
+  ggplot() +
+  aes(x = cod, y = flounder, fill = value) +
+  geom_tile() +
+  facet_grid(y_interval~quarter) +
+  scale_fill_gradient2(midpoint = 1.00,
+                       low = "#00AFBB", 
+                       mid = "white", 
+                       high = "#FC4E07") +
+  theme(axis.text.x = element_text(angle = 30, 
+                                   hjust = 1, 
+                                   vjust = 1),
+        panel.background = element_rect(fill = "gray"),
+        legend.position = "bottom") +
+  labs(fill = "Spearman\ndietary\ndistance", 
+       x = "Cod body length (cm)", y = "Flounder body length (cm)",
+       subtitle = "Static flounder diet (2015-2020), historical cod diet")
+gg_stom_hist
+#ggsave("../fig/stom_dist.pdf", gg_stom_hist, height = 5.5, width = 12)
+```
+
+## Horn-Morisita Distance index
+
+Alternative to the Spearman dietary distance above. Morisita distance index value ranges 0-1, with 0 being identical and 1 fully different diets. Uses pairwise comparisons of two sets of vectors. *Horn* version to account for values being proportions instead of count data, as in our case with stomach content weight.
+
+```{r fig.height = 9.5, fig.width = 6.5, out.width="70%"}
+year_brackets <- c(1962, 1978, 1990, 2000, 2010, 2014, 2020)
+
+MoriFn <- function() {
+  
+  MoriExe <- function(x1, x2){
+    horn_morisita(x1 %>% 
+                    arrange(species_group) %>%
+                    pull(w_sum), 
+                  x2 %>% 
+                    arrange(species_group) %>%
+                    pull(w_sum)) %>% 
+      round(3)
+  }
+  
+  # df to combine with the stomach data to add missing prey items (and set weight to 0)
+  all_sp_groups <- old_stom_data %>% 
+    filter(!is.na(species_group)) %>%
+    distinct(species_group) %>%
+    mutate(w_sum = 0)
+  
+  # year intervals to manually add to flounder's missing intervals (while keeping weights as during 2015-2020)
+  all_year_agg <- old_stom_data %>% 
+    mutate(year_agg = cut(year, year_brackets, dig.lab = 10)) %>%
+    distinct(year_agg) %>% 
+    mutate(year_agg = as.character(year_agg)) %>% 
+    pull(year_agg)
+  
+  # If a predator of a specific time period and size class is fully missing a prey,
+  # the following tibble will be used to add an empty line for that prey, with stomach weight 0,
+  # so that the right species will be matched later in the Morisita function
+  w_empty <- old_stom_data %>% 
+    filter(!is.na(species_group) &
+             predator_length_cm > 10) %>%
+    mutate(year_agg = cut(year, year_brackets, dig.lab = 10)) %>%
+    distinct(predator_length_class) %>% # For each size class,
+    mutate(year_agg = list(all_year_agg)) %>% # Add year brackets (nested)
+    unnest(year_agg) %>% # (expand year brackets)
+    mutate(sp_empty = nest(all_sp_groups)) %>% # add filler prey data to use for missing values (w/ weight 0)
+    unnest(sp_empty) %>%
+    unnest(data) %>% # (2x expand)
+    nest() %>% # nest all...
+    slice(c(1,1)) %>% #... and duplicate...
+    mutate(quarter = c(1,4)) %>% #...to add quarters 1 and 4
+    unnest(data)
+  
+  # Set up the first half of the tibble, with time data and summarised prey weight information
+  tmp_half <- 
+    old_stom_data %>% 
+    filter(!is.na(species_group) &
+             predator_length_cm > 10) %>% 
+    mutate(year_agg = as.character(cut(year, year_brackets, dig.lab = 10))) %>% 
+    group_by(unique_pred_id, predator_name, 
+             predator_length_class, year_agg, quarter, species_group) %>%
+    summarise(prey_weight_tot = sum(prey_weight_g, na.rm = T)) %>%
+    ungroup(species_group) %>%
+    mutate(prey_weight_rel = prey_weight_tot / sum(prey_weight_tot)) %>%
+    ungroup(unique_pred_id) %>%
+    group_by(species_group, .add = T) %>%
+    summarise(prey_rel_sum = sum(prey_weight_rel, na.rm = T)) %>% 
+    ungroup(species_group) %>%
+    mutate(w_sum = prey_rel_sum / sum(prey_rel_sum, na.rm = T)) %>% # (actually unnecessary) 
+    ungroup() %>%
+    group_by(predator_name) %>% 
+    nest() %>%
+    ungroup() %>%
+    slice(c(1, rep(2, each = 6))) %>% # Manually duplicate flounder instances
+    mutate(.r = 1:n()) %>%
+    unnest(data) %>% 
+    mutate(year_agg = case_when(.r == 1 ~ year_agg, # (leave cod data as is)
+                                .r == 2 ~ "(1962,1978]", # properly attribute time periods for flounder duplicates
+                                .r == 3 ~ "(1978,1990]",
+                                .r == 4 ~ "(1990,2000]",
+                                .r == 5 ~ "(2000,2010]",
+                                .r == 6 ~ "(2010,2014]",
+                                .r == 7 ~ "(2014,2020]")) %>%
+    dplyr::select(-predator_name, -.r, -prey_rel_sum) %>%
+    full_join(w_empty, by = c("predator_length_class", "species_group", "year_agg", "quarter")) %>%   # join with empty-values tibble to add missing prey instances
+    dplyr::select(-w_sum.y) %>%
+    rename(w_sum = w_sum.x) %>%
+    mutate(w_sum = ifelse(is.na(w_sum), 0, w_sum)) %>% # set missing prey stomach weight to zero
+    arrange(year_agg, quarter, predator_length_class) %>% 
+    #dplyr::select(-species_group) %>%
+    ungroup() %>%
+    group_by(predator_length_class, year_agg, quarter) %>% 
+    nest() # nest stomach weights
+  
+  # Use crossing() to generate tibble with all combinations of predator size classes and time periods
+  tmp_half %>%
+    crossing(tmp_half, .name_repair = "unique") %>%
+    rename(predator_length_class.x = predator_length_class...1,
+           predator_length_class.y = predator_length_class...5,
+           year_agg.x = year_agg...2,
+           year_agg.y = year_agg...6,
+           quarter.x = quarter...3,
+           quarter.y = quarter...7,
+           data.x = data...4,
+           data.y = data...8) %>%
+    arrange(year_agg.x, year_agg.y, predator_length_class.x, predator_length_class.y) %>%
+    filter(year_agg.x == year_agg.y & quarter.x == quarter.y) %>% # Only interested in comparing cod and flounder during the same time period
+    filter(str_detect(predator_length_class.x, "cod") & # Filter x and y cols to only include compare cod and flounder (no cod-cod etc)
+             str_detect(predator_length_class.y, "flounder")) %>%
+    mutate(mori_value = map2_dbl(data.x, data.y, MoriExe))   ####
+    # filter(year_agg.x == "(2010,2014]" & 
+    #          predator_length_class.x %in% c("cod_(40,50]", 
+    #                                         "cod_(50,Inf]") &
+    #          quarter.x == 4 &
+    #          predator_length_class.y == "flounder_(20,30]") %>% slice(1) %>% unnest(data.x)
+}
+
+gg_mori <- MoriFn() %>% 
+  rename(flounder = predator_length_class.y,
+         cod = predator_length_class.x) %>%
+  mutate(flounder = case_when(
+    flounder == "flounder_(-Inf,20]" ~ "< 20",
+    flounder == "flounder_(20,30]" ~ "20-30",
+    flounder == "flounder_(30, Inf]" ~ "30+")) %>%
+  mutate(cod = case_when(
+    cod == "cod_(-Inf,10]" ~ "< 10",
+    cod == "cod_(10,15]" ~ "10-15",
+    cod == "cod_(15,20]" ~ "15-20",
+    cod == "cod_(20,25]" ~ "20-25",
+    cod == "cod_(25,30]" ~ "25-30",
+    cod == "cod_(30,40]" ~ "30-40",
+    cod == "cod_(40,50]" ~ "40-50",
+    cod == "cod_(50,Inf]" ~ "50+")) %>%
+  mutate(year_agg.x = case_when(year_agg.x == "(1962,1978]" ~ "1962-1978",
+                           year_agg.x == "(1978,1990]" ~ "1979-1990",
+                           year_agg.x == "(1990,2000]" ~ "1991-2000",
+                           year_agg.x == "(2000,2010]" ~ "2001-2010",
+                           year_agg.x == "(2010,2014]" ~ "2011-2014",
+                           year_agg.x == "(2014,2020]" ~ "2015-2020")) %>%
+  mutate(quarter.x = case_when(quarter.x == "1" ~ "Q1",
+                               quarter.x == "4" ~ "Q4")) %>%
+  ggplot() +
+  aes(x = cod, 
+      y = flounder, 
+      fill = mori_value, 
+      label = mori_value) +
+  geom_tile() +
+  scale_fill_gradient2(low = "lightgreen", mid = "steelblue2", high = "darkred", midpoint = 0.72) +
+  facet_grid(year_agg.x~quarter.x) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "bottom",
+        legend.margin = margin(t=-7)) +
+  labs(fill = "Horn-Morisita dietary \ndistance index", x = "Cod length (cm)", y = "Flounder length (cm)")#,
+       # title = "Cod-Flounder dietary distance",
+       # subtitle = "Static flounder diet (2015-2020), historical cod diet (1963-2020)")
+gg_mori
+
+#ggsave("../fig/diet_mori.pdf", gg_mori, height = 7.5, width = 5)
+
+```
+
+## Stomach data visualization
+
+```{r fig.width=15, fig.height=8, out.width="100%"}
+
+stom_count_data <- old_stom_data %>% filter(!is.na(species_group) & 
+                  predator_length_cm > 10) %>%  
+  mutate(year_agg = as.character(cut(year, year_brackets, dig.lab = 10))) %>%
+  dplyr::select(predator_name, year_agg, quarter, predator_length_class, unique_pred_id) %>%
+  distinct() %>%
+  group_by(predator_name, year_agg, quarter, predator_length_class) %>%
+  count() %>%
+      mutate(predator_length_class = case_when(
+    predator_length_class == "flounder_(-Inf,20]" ~ "< 20",
+    predator_length_class == "flounder_(20,30]" ~ "20-30",
+    predator_length_class == "flounder_(30, Inf]" ~ "30+",
+    predator_length_class == "cod_(10,15]" ~ "10-15",
+    predator_length_class == "cod_(15,20]" ~ "15-20",
+    predator_length_class == "cod_(20,25]" ~ "20-25",
+    predator_length_class == "cod_(25,30]" ~ "25-30",
+    predator_length_class == "cod_(30,40]" ~ "30-40",
+    predator_length_class == "cod_(40,50]" ~ "40-50",
+    predator_length_class == "cod_(50,Inf]" ~ "50+")) %>%
+  mutate(year_agg = case_when(year_agg == "(1962,1978]" ~ "1962-1978",
+                           year_agg == "(1978,1990]" ~ "1979-1990",
+                           year_agg == "(1990,2000]" ~ "1991-2000",
+                           year_agg == "(2000,2010]" ~ "2001-2010",
+                           year_agg == "(2010,2014]" ~ "2011-2014",
+                           year_agg == "(2014,2020]" ~ "2015-2020")) %>%
+  mutate(quarter = case_when(quarter == "1" ~ "Q1",
+                               quarter == "4" ~ "Q4")) %>%
+  mutate(predator_name = case_when(predator_name == "cod" ~ "Cod",
+                               predator_name == "flounder" ~ "Flounder")) 
+
+gg_stom <- old_stom_data %>% 
+  filter(!is.na(species_group) & 
+                  predator_length_cm > 10) %>% 
+  mutate(year_agg = as.character(cut(year, year_brackets, dig.lab = 10))) %>% 
+  group_by(unique_pred_id, year_agg, quarter, predator_name, 
+           predator_length_class, species_group) %>%
+  summarise(prey_weight_tot = sum(prey_weight_g, na.rm = T)) %>%
+  ungroup(species_group) %>%
+  mutate(prey_weight_rel = prey_weight_tot / sum(prey_weight_tot, na.rm = T)) %>%
+  ungroup(unique_pred_id) %>%
+  group_by(species_group, .add = T) %>%
+  summarise(prey_rel_mean = sum(prey_weight_rel, na.rm = T)) %>% 
+  ungroup(species_group) %>%
+  mutate(prey_rel_norm = prey_rel_mean / sum(prey_rel_mean, na.rm = T)) %>%
+  ungroup() %>% 
+    mutate(predator_length_class = case_when(
+    predator_length_class == "flounder_(-Inf,20]" ~ "< 20",
+    predator_length_class == "flounder_(20,30]" ~ "20-30",
+    predator_length_class == "flounder_(30, Inf]" ~ "30+",
+    predator_length_class == "cod_(10,15]" ~ "10-15",
+    predator_length_class == "cod_(15,20]" ~ "15-20",
+    predator_length_class == "cod_(20,25]" ~ "20-25",
+    predator_length_class == "cod_(25,30]" ~ "25-30",
+    predator_length_class == "cod_(30,40]" ~ "30-40",
+    predator_length_class == "cod_(40,50]" ~ "40-50",
+    predator_length_class == "cod_(50,Inf]" ~ "50+")) %>%
+  mutate(year_agg = case_when(year_agg == "(1962,1978]" ~ "1962-1978",
+                           year_agg == "(1978,1990]" ~ "1979-1990",
+                           year_agg == "(1990,2000]" ~ "1991-2000",
+                           year_agg == "(2000,2010]" ~ "2001-2010",
+                           year_agg == "(2010,2014]" ~ "2011-2014",
+                           year_agg == "(2014,2020]" ~ "2015-2020")) %>%
+  mutate(quarter = case_when(quarter == "1" ~ "Q1",
+                               quarter == "4" ~ "Q4")) %>%
+  mutate(predator_name = case_when(predator_name == "cod" ~ "Cod",
+                               predator_name == "flounder" ~ "Flounder")) %>%
+  ggplot() +
+  aes(x = predator_length_class, y = prey_rel_norm, fill = species_group) +
+  geom_col() +
+  geom_text(data = stom_count_data,
+            mapping = aes(x = predator_length_class, y = 1.05, label = n),
+            inherit.aes = F, size = 2.75) +
+  scale_fill_brewer(palette = "Paired") +
+  facet_nested(quarter ~ predator_name + year_agg, 
+               scales = "free", space = "free") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "bottom") +
+  labs(fill = "Species Group", x = "Predator Length Class", 
+       y = "Stomach content dietary proportions")
+gg_stom
+#ggsave(gg_stom, filename = "../fig/stom_cont.pdf", height = 6, width = 18)
 ```
 
 
+# Dietary fish/invertebrate proportions
+
+(new data)
+
+Follows cod's dietary proportion of fish and invertebrates over the years 1993-2023.
+
+```{r}
+# Wrangle data
+dm_sum <- dm |> 
+  mutate(quarter = quarter(month),
+         invert = saduria + other + other_invert,
+         fish = herring + sprat + other_fish) |> 
+  filter(subdiv != "3.d.24") |> #%in% c("3.d.28.2", "3.d.25")) |> 
+  filter(quarter %in% c(1, 4) &
+           pred_length > 10) |> 
+  #filter(pred_weight > 100) |> 
+  # mutate(FultonK = 100 * pred_weight / (pred_length^3)) |> 
+  # filter(FultonK < 2.0 & FultonK > 0.5) |> 
+  #mutate(YearAgg = cut(year, c(1963, 1978, 1990, 1995, 2000, 2005, 2010, 2014, 2023))) %>%
+  mutate(pred_size_class = paste0("cod_", cut(pred_length, c(10, 20, 25, 30, 40, 50,Inf)))) |>
+  # mutate(pred_size_class = paste0("cod_", cut(pred_weight, c(100, 300, 600, 1000, 2500, 5000, Inf)))) |> 
+  # mutate(pred_cond_class = paste0("FultonK_", cut(FultonK, c(-Inf, 0.85, 0.95,  1.05, 1.15, Inf)))) |>
+  dplyr::select(invert, fish, year, pred_size_class) |>  #pred_size_class
+  mutate(invert = invert / (invert + fish),
+         fish = 1 - invert,
+         .by = c(year, pred_size_class)) |> 
+  summarise(invert = sum(invert, na.rm = T),
+            fish = sum(fish, na.rm = T),
+            .by = c(year, pred_size_class)) |>
+  mutate(invert_prop = invert / (invert + fish),
+         fish_prop = fish / (invert + fish)) |> 
+  pivot_longer(c("invert_prop", "fish_prop"), names_to = "prey", values_to = "weight_prop")
+```
+
+## Plot fish/inv proportions
+
+Cod dietary transition from invertebrates to fish diet over time, divided in arbitrary cod length classes.
+
+```{r fig.height = 4, fig.width = 7, out.width="100%"}
+gg_invert_fish <-
+  dm_sum |> 
+  #filter(year > 1979) %>%
+  mutate(pred_size_class = case_when(
+    pred_size_class == "cod_(-Inf,10]" ~ "< 10",
+    pred_size_class == "cod_(10,20]" ~ "10-20",
+    pred_size_class == "cod_(20,25]" ~ "20-25",
+    pred_size_class == "cod_(25,30]" ~ "25-30",
+    pred_size_class == "cod_(30,40]" ~ "30-40",
+    pred_size_class == "cod_(40,50]" ~ "40-50",
+    pred_size_class == "cod_(50,Inf]" ~ "50+"),
+    prey = case_when(
+      prey == "fish_prop" ~ "Fish",
+      prey == "invert_prop" ~ "Invertebrate"
+    )) %>%
+  ggplot(aes(year, weight_prop, color = prey)) +
+  geom_smooth(formula = y~s(x, k=4), method = "gam", se = FALSE) +
+  geom_point() +
+  #geom_vline(xintercept = 1, linetype = "dashed") +
+  scale_color_manual(values = c("steelblue", "darkgoldenrod2")) +
+  facet_wrap(pred_size_class~., scales = "free") + 
+  theme(legend.position = "bottom", legend.margin = margin(t = -10)) +
+  labs(x = "Year", y = "Dietary weight proportion", color = "Prey type") +
+  NULL
+gg_invert_fish
+#ggsave("../fig/diet_transition.pdf", gg_invert_fish, height = 4.5, width = 7)
+```
+
+# Fulton's K
+
+## Condition exploration
+
+Does taking into account cod's condition (Fulton's K) correlate with their diet? First, how has cod condition developed over the years?
+
+(Blue dashed line = Good, Red dotted line = Bad)
+
+```{r fig.height = 12, fig.width = 14, out.width="100%"}
+cond_df <- dm |> 
+  mutate(quarter = quarter(month),
+         invert = saduria + other + other_invert,
+         fish = herring + sprat + other_fish) |> 
+  filter(subdiv != "3.d.24") |> #%in% c("3.d.28.2", "3.d.25")) |> 
+  filter(quarter %in% c(1, 4)) |> 
+  filter(pred_length > 10) |> 
+  #filter(pred_weight > 100) |> 
+  mutate(FultonK = 100 * pred_weight / (pred_length^3)) |> 
+  filter(between(FultonK, 0.5, 1.75)) |> 
+  mutate(YearAgg = cut(year, c(1963, 1978, 1990, 2000, 2010, 2014, 2023))) |> 
+  mutate(pred_size_class = paste0("cod_", cut(pred_length, c(10, 15, 20, 25, 30, 40, 50,Inf)))) |> 
+  dplyr::select(pred_ID, YearAgg, pred_size_class, FultonK) |> 
+  mutate(pred_size_class = case_when(
+    pred_size_class == "cod_(-Inf,10]" ~ "< 10",
+    pred_size_class == "cod_(10,15]" ~ "10-15",
+    pred_size_class == "cod_(15,20]" ~ "15-20",
+    pred_size_class == "cod_(20,25]" ~ "20-25",
+    pred_size_class == "cod_(25,30]" ~ "25-30",
+    pred_size_class == "cod_(30,40]" ~ "30-40",
+    pred_size_class == "cod_(40,50]" ~ "40-50",
+    pred_size_class == "cod_(50,Inf]" ~ "50+"))
+
+# # # Fulton K distribution separated by length class and YearAgg facets # # #
+cond_count <- cond_df |> 
+  group_by(YearAgg, pred_size_class) |> 
+  count() |> 
+  mutate(n = paste0("n=",n))
+
+cond_df |>   
+  ggplot() +
+  aes(x = FultonK) +
+  geom_density() + 
+  geom_vline(xintercept = 1, linetype = "dashed", color = "blue") +
+  geom_vline(xintercept = 0.8, linetype = "dotted", color = "red") +
+  geom_text(data = cond_count, aes(label = n, x = 1.62, y = 5.7)) +
+  facet_grid(pred_size_class~YearAgg)  +
+  NULL
+```
+
+## Condition vs length over time
+
+Is there a trend of larger or smaller individuals having better or worse condition? Seems like a general trend over all sizes more depending on the time period:
+
+```{r  fig.height = 5, fig.width = 12, out.width="100%"}
+# # # Length x Fulton K --- individual based # # #
+cond_year_count <- cond_df |> 
+  group_by(YearAgg) |> 
+  count() |> 
+  mutate(n = paste0("n=", n))
+
+dm |> 
+  mutate(quarter = quarter(month),
+         invert = saduria + other + other_invert,
+         fish = herring + sprat + other_fish) |> 
+  filter(subdiv != "3.d.24") |> 
+  filter(quarter %in% c(1, 4)) |> 
+  filter(pred_length > 10) |> 
+  mutate(FultonK = 100 * pred_weight / (pred_length^3)) |> 
+  filter(between(FultonK, 0.5, 1.75)) |> 
+  mutate(YearAgg = cut(year, c(1963, 1978, 1990, 2000, 2010, 2014, 2023))) |> 
+  dplyr::select(pred_ID, YearAgg, pred_length, FultonK) |> 
+  ggplot() +
+  aes(x = pred_length, y = FultonK) +
+  geom_point(alpha = 0.2) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "darkgoldenrod2", size = 1) +
+  geom_hline(yintercept = 0.8, linetype = "dashed", color = "red", size = 1) +
+  geom_hline(yintercept = 1.2, linetype = "dashed", color = "green", size = 1) +
+  geom_smooth(formula = y~s(x, k=5), method = "gam", se = FALSE) +
+  geom_text(data = cond_year_count, aes(label = n, x = 100, y = 1.65)) +
+  scale_y_continuous(breaks = c(0.6, 0.8, 1.0, 1.2, 1.4, 1.6)) +
+  facet_wrap(.~YearAgg) + 
+  labs(x = "Cod length (cm)", y = "Fulton's K condition index")
+```
+
+## Individual Fulton's K vs Proportion Invert:Fish
+
+Is having higher or lower condition linked to having a higher proportion fish in the diet (compared to benthic diet)? Hard to visualize as a very large proportion if individuals have only either fish or invertebrate diets. No general trends I believe:
+
+```{r fig.height = 8, fig.width = 11, out.width="100%"}
+dm |> 
+  mutate(quarter = quarter(month),
+         invert = saduria + other + other_invert,
+         fish = herring + sprat + other_fish) |> 
+  filter(subdiv != "3.d.24") |> #%in% c("3.d.28.2", "3.d.25")) |> 
+  filter(quarter %in% c(1, 4)) |> 
+  filter(pred_length > 10) |> 
+  #filter(pred_weight > 100) |> 
+  mutate(FultonK = 100 * pred_weight / (pred_length^3)) |> 
+  filter(FultonK < 3 & FultonK > 0.25) |> 
+  mutate(YearAgg = cut(year, c(1963, 1978, 1990, 2000, 2010, 2014, 2023))) %>%
+  mutate(pred_size_class = paste0("cod_", cut(pred_length, c(10, 20, 25, 30, 40, 50,Inf)))) |>
+  # mutate(pred_size_class = paste0("cod_", cut(pred_weight, c(100, 300, 600, 1000, 2500, 5000, Inf)))) |> 
+  mutate(pred_cond_class = paste0(cut(FultonK, c(-Inf, 0.85, 0.95,  1.05, 1.15, Inf)))) |>
+  dplyr::select(pred_ID, invert, fish, YearAgg, FultonK, pred_size_class, pred_cond_class) |>  #
+  mutate(invert = invert / (invert + fish),
+         fish = 1 - invert) |> 
+  filter(!is.na(fish)) |> #remove empty stomachs
+  ggplot() +
+  aes(x = pred_cond_class, y = fish) +
+  geom_boxplot(width = 0.3) +
+  geom_jitter(alpha = 0.2) +
+  #scale_y_continuous(limits = c(0,1)) +
+  facet_grid(YearAgg~pred_size_class) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        strip.background = element_rect(fill = "white", colour = "black"),
+        axis.text.x = element_text(angle = 30, hjust=1, vjust=1)) +
+  labs(x = "Predator condition class (Fulton's K)", y = "Proportion fish in diet (weight)")
+#ggsave("../fig/Prop_fish_vs_Condition.pdf", height = 8, width = 11)
+```
+
+## Number of empty stomachs
+
+```{r fig.height = 4, fig.width = 8, out.width = "100%"}
+dm |> 
+  mutate(quarter = quarter(month),
+         invert = saduria + other + other_invert,
+         fish = herring + sprat + other_fish) |> 
+  mutate(stom_sum = invert + fish) |>
+  mutate(fish_prop = fish / stom_sum) |> 
+  filter(subdiv != "3.d.24") |> #%in% c("3.d.28.2", "3.d.25")) |> 
+  filter(quarter %in% c(1, 4)) |> 
+  filter(pred_length > 10) |> 
+  mutate(YearAgg = cut(year, c(1963, 1978, 1990, 2000, 2010, 2014, 2023))) |> 
+  mutate(pred_size_class = paste0("cod_", cut(pred_length, c(10, 20, 30, 40, 50,Inf)))) |>
+  mutate(FultonK = 100 * pred_weight / (pred_length^3)) |> 
+  filter(FultonK < 2 & FultonK > 0.25) |> 
+  mutate(EmptyStomach = ifelse(stom_sum > 0, "not empty", "empty")) |> 
+  ggplot(aes(x = year, fill = EmptyStomach)) +
+  geom_bar() +
+  facet_wrap(pred_size_class~.)
+```
+
+## Stomach content weight vs condition
+
+Excluding empty stomachs.
+
+```{r fig.height = 12, fig.width = 14, out.width="100%"}
+stom_weight_df <- dm |> 
+  mutate(quarter = quarter(month),
+         invert = saduria + other + other_invert,
+         fish = herring + sprat + other_fish) |> 
+  mutate(stom_sum = invert + fish) |>
+  mutate(fish_prop = fish / stom_sum) |> 
+  filter(subdiv != "3.d.24") |> #%in% c("3.d.28.2", "3.d.25")) |> 
+  filter(quarter %in% c(1, 4)) |> 
+  filter(pred_length > 10) |> 
+  mutate(YearAgg = cut(year, c(1963, 1978, 1990, 2000, 2010, 2014, 2023))) |> 
+  mutate(pred_size_class = paste0("cod_", cut(pred_length, c(10, 20, 30, 40, 50,Inf)))) |>
+  mutate(FultonK = 100 * pred_weight / (pred_length^3)) |> 
+  filter(FultonK < 2 & FultonK > 0.25 & stom_sum > 0)
+
+ConditionVsStomachContentWeight <- function(){
+  stomw_count <- stom_weight_df |> 
+    group_by(YearAgg, pred_size_class) |> 
+    count() %>%
+    mutate(n = paste0("n=",n))
+  
+  stom_weight_df |> 
+    ggplot() +
+    aes(x = log(stom_sum), y = FultonK, color = fish_prop) +
+    geom_point(alpha = 0.33) +
+    geom_smooth(formula = y~x, method = "lm", se = F, color = "darkred") +
+    stat_cor(label.x.npc = "left", label.y.npc = "top", vjust = 1, color = "black") +
+    geom_text(data = stomw_count, aes(label = n, x = -Inf, y = -Inf), 
+              hjust=-0.3, vjust=-0.3, inherit.aes = F) +
+    geom_hline(yintercept = 1, linetype = "dashed") +
+    scale_color_gradient(low = "darkgoldenrod2", high = "steelblue") +
+    facet_grid(YearAgg~pred_size_class, scales = "free") +
+    labs(title = "Condition vs total stomach content weight",
+         subtitle = "(excluding empty stomachs)",
+         x = "log(total stomach content weight)",
+         y = "Condition (Fulton's K)",
+         color = "Stomach content\nfish proportion")
+}
+ConditionVsStomachContentWeight()
+#ggsave("../fig/condition_vs_stom_cont_weight.pdf", width = 14, height = 12)
+```
+
+### Stomach weight distribution
+
+Excluding empty stomachs.
+
+```{r fig.height = 12, fig.width = 14, out.width="100%"}
+# Stomach Weight Distribution
+StomWeightDistribution <- function(){
+  mean_stom_weight <- stom_weight_df |> 
+    group_by(YearAgg, pred_size_class) |> 
+    summarise(m_stom_w = mean(stom_sum)) |> 
+    ungroup()
+  
+  stomw_count <- stom_weight_df |> 
+    group_by(YearAgg, pred_size_class) |> 
+    count() %>%
+    mutate(n = paste0("n=",n))
+  
+  stom_weight_df |> 
+    ggplot()+
+    aes(x = log(stom_sum)) +
+    geom_density() +
+    geom_text(data = stomw_count, aes(label = n, x = -Inf, y = Inf), 
+              hjust=-0.3, vjust=1.3, inherit.aes = F) +
+    geom_vline(mean_stom_weight, mapping = aes(xintercept = log(m_stom_w)), linetype = "dashed") +
+    facet_grid(YearAgg~pred_size_class, scales = "free")
+}
+StomWeightDistribution()
+```
+
+```{r}
+stom_weight_df %>%
+  ggplot() +
+  aes(x = year, y = log(stom_sum), group = year, color = fish_prop) +
+  geom_boxplot(color = "black") + 
+  geom_jitter(alpha = 0.33) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_color_gradient(low = "darkgoldenrod2", high = "steelblue") +
+  facet_wrap(.~pred_size_class, ncol = 1)
+```
+
+## Condition when empty stomach
+
+Considering the positive trend with higher stomach content weight and higher condition, comparing empty stomachs to non-empty stomachs showed surprisingly little difference. 
+
+```{r fig.height = 5, fig.width = 9, out.width="100%"}
+# # # Condition of empty stomachs
+EmptyStomachCondition <- function(){
+  meanFilled <- dm |> 
+    mutate(quarter = quarter(month),
+           invert = saduria + other + other_invert,
+           fish = herring + sprat + other_fish) |> 
+    mutate(stom_sum = invert + fish) |> 
+    filter(subdiv != "3.d.24") |> #%in% c("3.d.28.2", "3.d.25")) |> 
+    filter(quarter %in% c(1, 4)) |> 
+    filter(pred_length > 10) |> 
+    mutate(YearAgg = cut(year, c(1963, 1978, 1990, 1995, 2000, 2005, 2010, 2014, 2023))) |> 
+    mutate(FultonK = 100 * pred_weight / (pred_length^3)) |> 
+    filter(FultonK < 1.5 & FultonK > 0.5) |> 
+    mutate(StomFilled = ifelse(stom_sum > 0, "yes", "no")) |> 
+    group_by(YearAgg, StomFilled) |> 
+    summarise(meanFilledCond = mean(FultonK))
+    
+  
+  tmp <- dm |> 
+    mutate(quarter = quarter(month),
+           invert = saduria + other + other_invert,
+           fish = herring + sprat + other_fish) |> 
+    mutate(stom_sum = invert + fish) |> 
+    filter(subdiv != "3.d.24") |> #%in% c("3.d.28.2", "3.d.25")) |> 
+    filter(quarter %in% c(1, 4)) |> 
+    filter(pred_length > 10) |> 
+    mutate(YearAgg = cut(year, c(1963, 1978, 1990, 1995, 2000, 2005, 2010, 2014, 2023))) |> 
+    mutate(FultonK = 100 * pred_weight / (pred_length^3)) |> 
+    filter(FultonK < 1.5 & FultonK > 0.5) %>%
+    mutate(StomFilled = ifelse(stom_sum > 0, "yes", "no"))
+ 
+ tmp |> 
+    ggplot() + 
+    aes(x = FultonK, color = StomFilled, fill = StomFilled) +
+    geom_density(alpha = 0.5) +
+    geom_vline(meanFilled, mapping = aes(xintercept = meanFilledCond, color = as.factor(StomFilled)), show.legend = F, size = 1) +
+   scale_fill_manual(values = c("firebrick3", "chartreuse")) +
+   scale_color_manual(values = c("firebrick4", "chartreuse2")) +
+    facet_wrap(YearAgg~.) +
+    labs(title = "Fulton's K distribution of cods with and without stomach content",
+         color = "Stomach content", fill = "Stomach content")
+}
+EmptyStomachCondition()
+```
+
+# Age-Length and Age-Weight
+
+```{r}
+gg_age_length <- age_length_df %>% 
+  filter(Area %in% c(25:28) &
+         between(Age, 1, 9) &
+           LngtClass < 1800 &
+           Species == "Gadus morhua" &
+           !is.na(IndWgt) &
+           IndWgt > 0) %>% 
+  group_by(Year, Species, Age, LngtClass, IndWgt) %>%
+  summarise(CANoAtLngt = sum(CANoAtLngt)) %>%
+  slice(rep(1:n(), times = CANoAtLngt)) %>%
+  ungroup(LngtClass, IndWgt) %>%
+  mutate(nAge = n()) %>%
+  filter(nAge > 5) %>%
+  summarise(meanLength = mean(LngtClass),
+            meanWeight = mean(IndWgt)) %>%
+  ggplot() +
+  aes(x = Year, y = meanLength / 10) + # /10 for cm
+  geom_point(alpha = 1) +
+  geom_smooth(formula = y~poly(x,2), method = "lm", se = FALSE) +
+  facet_wrap(.~Age, scales = "free_y") +
+  labs(y = "Mean Length (cm)")
+gg_age_length
+#ggsave("../fig/age_length.pdf", gg_age_length, height = 5, width = 6)
+
+gg_age_weight <- age_length_df %>% 
+  filter(Area %in% c(25:28) &
+         between(Age, 1, 9) &
+           LngtClass < 1800 &
+           Species == "Gadus morhua" & #"Gadus morhua" "Platichthys flesus"
+           !is.na(IndWgt) &
+           IndWgt > 0) %>%  #filter(Year == 2007 & Age == 9) %>% arrange(LngtClass) %>% print(n=60) ## Weird measurements 2007?
+  group_by(Year, Species, Age, LngtClass, IndWgt) %>%
+  summarise(CANoAtLngt = sum(CANoAtLngt)) %>%
+  slice(rep(1:n(), times = CANoAtLngt)) %>%
+  ungroup(LngtClass, IndWgt) %>%
+  mutate(nAge = n()) %>%
+  filter(nAge > 5) %>% 
+  summarise(meanLength = mean(LngtClass),
+            meanWeight = mean(IndWgt)) %>%
+  ggplot() + 
+  aes(x = Year, y = meanWeight) +
+  geom_point(alpha = 1) +
+  geom_smooth(formula = y~poly(x,2), method = "lm", se = FALSE) +
+  facet_wrap(.~Age, scales = "free_y") +
+  labs("Age facets", y = "Mean Weight (g)")
+gg_age_weight
+#ggsave("../fig/age_weight.pdf", gg_age_weight, height = 5, width = 6)
+```
 
