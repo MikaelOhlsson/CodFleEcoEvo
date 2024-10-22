@@ -20,10 +20,11 @@ library(ggpubr)
 library(cowplot)
 library(RColorBrewer)
 library(tidyverse)
-library(lubridate)
+library(lubridate) #date formatting
 library(raster)
-library(patchwork)
+#library(patchwork)
 library(abdiv) #Morisita fn
+library(FSA) #Age-Length key conv
 
 theme_set(theme_bw())
 theme_update(panel.grid = element_blank(),
@@ -184,7 +185,7 @@ gg_size_change <- dens_prop %>%
   mutate(length_var = case_when(length_var == "mean_length" ~ "Mean",
                                 length_var == "p95_length" ~ "95 percentile"),
          species = case_when(species == "cod" ~ "Cod",
-                                species == "flounder" ~ "Flounder")) %>%
+                                species == "flounder" ~ "Flounder")) %>% 
 #  filter(species == "cod") %>%
   ggplot() +
   aes(x = year, y = length_val, color = length_var) +
@@ -215,7 +216,7 @@ gg_biomass <- cod_fle_index %>%
   geom_ribbon(alpha = 0.2, color = NA) +
   # scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
   # scale_fill_manual(values = c("cornflowerblue", "darkseagreen")) +
-  scale_x_continuous(limits = c(1991,2024)) +
+  #scale_x_continuous(limits = c(1991,2024)) +
   facet_wrap(.~species) +
   labs(x = "Year", y = "Biomass estimate (1000 t)", color = "Species", fill = "Species") +
   theme(axis.title.x = element_blank(),
@@ -426,7 +427,7 @@ MoriFn <- function() {
     group_by(species_group, .add = T) %>%
     summarise(prey_rel_sum = sum(prey_weight_rel, na.rm = T)) %>% 
     ungroup(species_group) %>%
-    mutate(w_sum = prey_rel_sum / sum(prey_rel_sum, na.rm = T)) %>% # (actually unnecessary) 
+    mutate(w_sum = prey_rel_sum / sum(prey_rel_sum, na.rm = T)) %>% # (actually unnecessary for plotting) 
     ungroup() %>%
     group_by(predator_name) %>% 
     nest() %>%
@@ -554,7 +555,7 @@ stom_count_data <- old_stom_data %>% filter(!is.na(species_group) &
 
 gg_stom <- old_stom_data %>% 
   filter(!is.na(species_group) & 
-                  predator_length_cm > 10) %>% 
+           predator_length_cm > 10) %>% 
   mutate(year_agg = as.character(cut(year, year_brackets, dig.lab = 10))) %>% 
   group_by(unique_pred_id, year_agg, quarter, predator_name, 
            predator_length_class, species_group) %>%
@@ -567,7 +568,7 @@ gg_stom <- old_stom_data %>%
   ungroup(species_group) %>%
   mutate(prey_rel_norm = prey_rel_mean / sum(prey_rel_mean, na.rm = T)) %>%
   ungroup() %>% 
-    mutate(predator_length_class = case_when(
+  mutate(predator_length_class = case_when(
     predator_length_class == "flounder_(-Inf,20]" ~ "< 20",
     predator_length_class == "flounder_(20,30]" ~ "20-30",
     predator_length_class == "flounder_(30, Inf]" ~ "30+",
@@ -577,17 +578,20 @@ gg_stom <- old_stom_data %>%
     predator_length_class == "cod_(25,30]" ~ "25-30",
     predator_length_class == "cod_(30,40]" ~ "30-40",
     predator_length_class == "cod_(40,50]" ~ "40-50",
-    predator_length_class == "cod_(50,Inf]" ~ "50+")) %>%
-  mutate(year_agg = case_when(year_agg == "(1962,1978]" ~ "1962-1978",
-                           year_agg == "(1978,1990]" ~ "1979-1990",
-                           year_agg == "(1990,2000]" ~ "1991-2000",
-                           year_agg == "(2000,2010]" ~ "2001-2010",
-                           year_agg == "(2010,2014]" ~ "2011-2014",
-                           year_agg == "(2014,2020]" ~ "2015-2020")) %>%
+    predator_length_class == "cod_(50,Inf]" ~ "50+")
+  ) %>%
+  mutate(year_agg = case_when(
+    year_agg == "(1962,1978]" ~ "1962-1978",
+    year_agg == "(1978,1990]" ~ "1979-1990",
+    year_agg == "(1990,2000]" ~ "1991-2000",
+    year_agg == "(2000,2010]" ~ "2001-2010",
+    year_agg == "(2010,2014]" ~ "2011-2014",
+    year_agg == "(2014,2020]" ~ "2015-2020")
+  ) %>%
   mutate(quarter = case_when(quarter == "1" ~ "Q1",
-                               quarter == "4" ~ "Q4")) %>%
+                             quarter == "4" ~ "Q4")) %>%
   mutate(predator_name = case_when(predator_name == "cod" ~ "Cod",
-                               predator_name == "flounder" ~ "Flounder")) %>%
+                                   predator_name == "flounder" ~ "Flounder")) %>%
   ggplot() +
   aes(x = predator_length_class, y = prey_rel_norm, fill = species_group) +
   geom_col() +
@@ -1002,5 +1006,108 @@ gg_age_weight <- age_length_df %>%
   labs("Age facets", y = "Mean Weight (g)")
 gg_age_weight
 #ggsave("../fig/age_weight.pdf", gg_age_weight, height = 5, width = 6)
+```
+
+# Age-Length key probabilities
+
+Plotting the probabilities of which length categories will belong to which age according to the Age-Length key.
+
+```{r out.width="100%", fig.height = 8, fig.width = 13}
+gg_al1 <- age_length_df %>%
+  filter(Species == "Gadus morhua" & Year %in% 1992:1999 & Age > 0) %>%
+  dplyr::select(LngtClass, Age) %>%
+  lencat(x = ~LngtClass, startcat = 30, w = 50) %>%
+  with(table(LCat, Age)) %>%
+  prop.table(margin = 1) %>% 
+  as_tibble() %>%
+  mutate(LCat = as.numeric(LCat),
+         Age = as.numeric(Age)) %>% 
+  mutate(LCat = as.factor(LCat),
+         Age = as.factor(Age)) %>%
+  ggplot() +
+  aes(y = Age, x = LCat, fill = n) +
+  geom_tile() +
+  scale_fill_distiller(palette = "Spectral") +
+  coord_fixed() +
+  theme(legend.position = "right",
+        axis.text.x = element_text(angle = 35, hjust = 1, vjust = 1)) +
+  labs(subtitle = "Probability of each specific length category belonging to an age group", 
+       title = "Age-Length key, years 1992-1999", 
+       x = "Length category (mm)", 
+       fill = "Probability")
+
+gg_al2 <- age_length_df %>%
+  filter(Species == "Gadus morhua" & Year %in% 2000:2007 & Age > 0) %>%
+  filter(LngtClass < 2000) %>% #removes a single erroneous outier
+  dplyr::select(LngtClass, Age) %>%
+  lencat(x = ~LngtClass, startcat = 30, w = 50) %>%
+  with(table(LCat, Age)) %>%
+  prop.table(margin = 1) %>% 
+  as_tibble() %>%
+  mutate(LCat = as.numeric(LCat),
+         Age = as.numeric(Age)) %>%
+  mutate(LCat = as.factor(LCat),
+         Age = as.factor(Age)) %>%
+  ggplot() +
+  aes(y = Age, x = LCat, fill = n) +
+  geom_tile() +
+  scale_fill_distiller(palette = "Spectral") +
+  coord_fixed() +
+  theme(legend.position = "right",
+        axis.text.x = element_text(angle = 35, hjust = 1, vjust = 1)) +
+  labs(subtitle = "Probability of each specific length category belonging to an age group", 
+       title = "Age-Length key, years 2000-2007", 
+       x = "Length category (mm)", 
+       fill = "Probability")
+
+gg_al3 <- age_length_df %>%
+  filter(Species == "Gadus morhua" & Year %in% 2008:2014 & Age > 0) %>%
+  dplyr::select(LngtClass, Age) %>%
+  lencat(x = ~LngtClass, startcat = 30, w = 50) %>%
+  with(table(LCat, Age)) %>%
+  prop.table(margin = 1) %>% 
+  as_tibble() %>%
+  mutate(LCat = as.numeric(LCat),
+         Age = as.numeric(Age)) %>%
+  mutate(LCat = as.factor(LCat),
+         Age = as.factor(Age)) %>%
+  ggplot() +
+  aes(y = Age, x = LCat, fill = n) +
+  geom_tile() +
+  scale_fill_distiller(palette = "Spectral") +
+  coord_fixed() +
+  theme(legend.position = "right",
+        axis.text.x = element_text(angle = 35, hjust = 1, vjust = 1)) +
+  labs(subtitle = "Probability of each specific length category belonging to an age group", 
+       title = "Age-Length key, years 2008-2014", 
+       x = "Length category (mm)", 
+       fill = "Probability")
+
+gg_al4 <- age_length_df %>%
+  filter(Species == "Gadus morhua" & Year %in% 2015:2020 & Age > 0) %>%
+  dplyr::select(LngtClass, Age) %>%
+  lencat(x = ~LngtClass, startcat = 30, w = 50) %>%
+  with(table(LCat, Age)) %>%
+  prop.table(margin = 1) %>% 
+  as_tibble() %>%
+  mutate(LCat = as.numeric(LCat),
+         Age = as.numeric(Age)) %>%
+  mutate(LCat = as.factor(LCat),
+         Age = as.factor(Age)) %>%
+  ggplot() +
+  aes(y = Age, x = LCat, fill = n) +
+  geom_tile() +
+  scale_fill_distiller(palette = "Spectral") +
+  coord_fixed() +
+  theme(legend.position = "right",
+        axis.text.x = element_text(angle = 35, hjust = 1, vjust = 1)) +
+  labs(subtitle = "Probability of each specific length category belonging to an age group", 
+       title = "Age-Length key, years 2015-2020", 
+       x = "Length category (mm)", 
+       fill = "Probability")
+
+plot_grid(gg_al1, gg_al2, gg_al3, gg_al4, ncol = 2)
+
+
 ```
 
