@@ -45,12 +45,48 @@ shape <- shapefile("../data/shapefiles/ICES-StatRec-mapto-ICES-Areas/StatRec_map
 # Biomass index
 cod_fle_index <- read_csv("../data/cod_fle_index.csv")
 
-# Catch density per length cod and flounder 
-#read_csv("../data/catch_by_length.csv") %>% 
-  #select(density, year, quarter, haul_id, sub_div, length_cm, species) %>% 
-  #filter(sub_div %in% c(25,28) & density > 0 & species %in% c("cod", "flounder")) %>% 
-  #write_csv("cod_fle_size_light.csv")
-cod_fle_size <- read_csv("../data/cod_fle_size_light.csv")
+cod_h <- read_csv("../data/cod_cpue_length_historical.csv") %>%
+  filter(sub_div %in% c(25:28) &
+           year >= 1978 & 
+           year <= 2015 & 
+           quarter %in% c(1,4) & 
+           !is.na(length_class)
+         ) |>
+  summarise(length_bio_dens = sum(biomass_density), .by = c(year, length_class)) |> 
+  mutate(species = "cod") %>% 
+  arrange(year, length_class)
+
+cod_n <- read_csv("../data/cod_cpue_length.csv") %>%
+  filter(sub_div %in% c(25:28) & 
+           year >= 2016 & 
+           quarter %in% c(1,4) &
+           !is.na(length_class)
+         ) %>%
+  summarise(length_bio_dens = sum(biomass_density), 
+            .by = c(year, length_class)) |> 
+  mutate(species = "cod") %>% 
+  arrange(year, length_class)
+
+fle_h <- read_csv("../data/flounder_cpue_length_historical.csv") %>%
+  filter(sub_div %in% c(25:28) & 
+           year >= 1978 & 
+           year <= 2015 & 
+           quarter %in% c(1,4) &
+           !is.na(length_class)) %>%
+  summarise(length_bio_dens = sum(biomass_density), .by = c(year, length_class)) |> 
+  mutate(species = "flounder") %>% 
+  arrange(year, length_class)
+
+fle_n <- read_csv("../data/fle_cpue_length.csv") %>%
+  filter(sub_div %in% c(25:28) & 
+           year >= 2016 & 
+           quarter %in% c(1,4) &
+           !is.na(length_class)) %>%
+  summarise(length_bio_dens = sum(biomass_density), .by = c(year, length_class)) |> 
+  mutate(species = "flounder") %>% 
+  arrange(year, length_class)
+
+cod_fle_size <- bind_rows(cod_h, cod_n, fle_h, fle_n)
 
 
 # Age-Length data (ICES DATRAS Age Length Key, dl 2024-10-11)
@@ -67,7 +103,7 @@ new_stom_data <- read_csv("../data/stomachs_CodFlecoevo_v1.csv") %>%
   filter(quantile(prey_pred_ratio, 0.99) > prey_pred_ratio) #Remove upper 1% quantile of cods with heaviest stomach content to body weight ratio
 
 #Which year brackets to aggregate
-year_brackets <- c(1962, 1978, 1990, 2000, 2010, 2014, 2024)
+year_brackets <- c(1962, 1978, 1990, 2000, 2008, 2014, 2023)
 ```
 
 # Body size dist 95 quantile
@@ -76,51 +112,31 @@ Mean and 95-percentile body length data for cod and flounder (shown below with t
 
 ```{r 95quant, fig.height = 2.8, fig.width = 6.5, out.width="80%"}
 
-dens_agg <- cod_fle_size %>% 
-  filter(species %in% c("cod", "flounder")) %>%
-  #filter(sub_div != 24) %>%
-  mutate(length_cm = round(length_cm, digits = 0)) %>%
-  #mutate(year_cat = cut(year, year_brackets, dig.lab = 10)) %>% 
-  group_by(year, species, length_cm) %>% #year_cat
-  summarise(density = sum(density)) %>%
-  ungroup()
-
 # Total density of hauls, used to calculate proportional density 
 dens_sum <- cod_fle_size %>%
-  filter(species %in% c("cod", "flounder")) %>%
-  #filter(sub_div != 24) %>%
-  mutate(length_cm = round(length_cm, digits = 0)) %>%
-  #mutate(year_cat = cut(year, year_brackets, dig.lab = 10)) %>% 
-  group_by(year, species) %>% #year_cat
-  summarise(tot_density = sum(density)) %>%
+  group_by(year,  species) %>% #year_cat
+  summarise(tot_density = sum(length_bio_dens)) %>%
   ungroup()
 
 # Proportional density
-dens_prop <- dens_agg %>%
+dens_prop <- cod_fle_size %>%
   left_join(dens_sum, by = c("year", "species")) %>% 
-  mutate(prop = density / tot_density)
+  mutate(prop = length_bio_dens / tot_density)
 
 # Q4 Mean length based on density of length classes
 dens_mean <- dens_prop %>%
-  filter(length_cm > 0) %>%
-  # mutate(year_cat = case_when(
-  #   year_cat == "(1992,2000]" ~ "1993-2000",
-  #   year_cat == "(2000,2010]" ~ "2001-2010",
-  #   year_cat == "(2010,2020]" ~ "2011-2020")) %>%
-  mutate(n = ceiling(density)) %>% 
   group_by(species, year) %>%
-  summarise(meanlength = sum(length_cm * n) / sum(n)) %>%
+  summarise(meanlength = sum(length_class * length_bio_dens) / sum(length_bio_dens)) %>%
   ungroup()
 
 gg_size_change <- dens_prop %>% 
-  filter(density > 0) %>% 
+  arrange(year, length_class) %>%
   group_by(year, species) %>% 
-  mutate(cumprop = cumsum(prop)) %>% 
+  mutate(cumprop = cumsum(prop)) %>% #filter(year == 1990 & species == "cod") %>% print(n = 200)
   filter(abs(cumprop-0.95) == min(abs(cumprop-0.95))) %>% 
-  arrange(year, species, cumprop) %>% 
   ungroup() %>%
   left_join(dens_mean) %>%
-  rename(p95_length = length_cm,
+  rename(p95_length = length_class,
          mean_length = meanlength) %>%
   pivot_longer(cols = c(p95_length, mean_length), 
                names_to = "length_var", 
@@ -129,19 +145,20 @@ gg_size_change <- dens_prop %>%
                                 length_var == "p95_length" ~ "95 percentile"),
          species = case_when(species == "cod" ~ "Cod",
                                 species == "flounder" ~ "Flounder")) %>% 
-#  filter(species == "cod") %>%
   ggplot() +
   aes(x = year, y = length_val, color = length_var) +
   geom_point() +
   geom_smooth(formula = y~poly(x,2), method = "lm", se = F) +
   scale_color_manual(values = c(brewer.pal(n = 8, name = "Dark2")[2:3])) +
-  scale_y_continuous(limits = c(20,70)) +
+  #scale_y_continuous(limits = c(20,70)) +
   facet_wrap(.~species) + 
   labs(x = "Year", y = "Length (cm)", color = "Length Variable") +
   theme(legend.position = "bottom",
-        legend.margin = margin(t = -10),
-        strip.text = element_blank()) +
+        legend.margin = margin(t = -10), 
+        strip.text = element_blank()
+        ) +
   NULL
+
 #gg_size_change
   #ggsave("../fig/size_change.pdf", gg_size_change, height=2.8, width=5)
 ```
@@ -152,14 +169,14 @@ Note that biomass estimates here are actually the relative abundances instead of
 
 ```{r Cod_Fle_Index, out.width="80%", fig.width=6, fig.height=6}
 gg_biomass <- cod_fle_index %>%
-  dplyr::select(-1) %>%
+  dplyr::select(-`...1`) %>%
   ggplot() +
   aes(x = year, y = est_t/1000, ymax = upr_t/1000, ymin = lwr_t/1000) + #,
   geom_line(linewidth = 1) +
   geom_ribbon(alpha = 0.2, color = NA) +
   # scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
   # scale_fill_manual(values = c("cornflowerblue", "darkseagreen")) +
-  #scale_x_continuous(limits = c(1991,2024)) +
+  scale_x_continuous(limits = c(1978,2023)) +
   facet_wrap(.~species) +
   labs(x = "Year", y = "Biomass estimate (1000 t)", color = "Species", fill = "Species") +
   theme(axis.title.x = element_blank(),
@@ -177,7 +194,7 @@ gg_size_biomass
 
 # Cod and flounder diet
 
-Cod diet includes years 1963--2024. Flounder diet limited to years 2015-2024. Testing each year interval separately, aggregating weights for each type of food from year to interval, and then calculates the proportion of each diet type for each size class. Further divided into first and fourth quarters.
+Cod diet includes years 1963--2023. Flounder diet limited to years 2015-2023. Testing each year interval separately, aggregating weights for each type of food from year to interval, and then calculates the proportion of each diet type for each size class. Further divided into first and fourth quarters.
 
 ## Count data of number of cod stomach samples per size class
 
@@ -225,6 +242,7 @@ new_stom_data %>%
 ## Stomach data visualization
 
 ```{r fig.width=15, fig.height=8, out.width="100%"}
+
 #For cleaner naming of some plots
 StomLabelling <- function(df){
   df %>% 
@@ -245,9 +263,9 @@ StomLabelling <- function(df){
     year_agg == "(1962,1978]" ~ "1962-1978",
     year_agg == "(1978,1990]" ~ "1979-1990",
     year_agg == "(1990,2000]" ~ "1991-2000",
-    year_agg == "(2000,2010]" ~ "2001-2010",
-    year_agg == "(2010,2014]" ~ "2011-2014",
-    year_agg == "(2014,2024]" ~ "2015-2024")
+    year_agg == "(2000,2008]" ~ "2001-2008",
+    year_agg == "(2008,2014]" ~ "2009-2014",
+    year_agg == "(2014,2023]" ~ "2015-2023")
   ) %>%
   mutate(quarter = case_when(quarter == "1" ~ "Q1",
                              quarter == "4" ~ "Q4")) %>%
@@ -313,8 +331,8 @@ gg_stom
 
 Morisita distance index value ranges 0-1, with 0 being identical and 1 fully different diets. Uses pairwise comparisons of two sets of vectors. *Horn* version to account for values being proportions instead of count data, as in our case with stomach content weight.
 
-```{r fig.height = 9.5, fig.width = 6.5, out.width="70%"}
-year_brackets <- c(1962, 1978, 1990, 2000, 2010, 2014, 2024)
+```{r fig.height = 7.3, fig.width = 8, out.width="100%"}
+#year_brackets <- c(1962, 1978, 1990, 2000, 2007, 2014, 2023)
 
 MoriFn <- function() {
   new_stom_df <- new_stom_data %>%
@@ -387,9 +405,9 @@ MoriFn <- function() {
                                 .r == 2 ~ "(1962,1978]", # properly attribute time periods for flounder duplicates
                                 .r == 3 ~ "(1978,1990]",
                                 .r == 4 ~ "(1990,2000]",
-                                .r == 5 ~ "(2000,2010]",
-                                .r == 6 ~ "(2010,2014]",
-                                .r == 7 ~ "(2014,2024]")) %>%
+                                .r == 5 ~ "(2000,2008]",
+                                .r == 6 ~ "(2008,2014]",
+                                .r == 7 ~ "(2014,2023]")) %>%
     dplyr::select(-predator_code, -.r) %>%
     full_join(w_empty, by = c("predator_length_class", "species_group", "year_agg", "quarter")) %>%   # join with empty-values tibble to add missing prey instances
     dplyr::select(-w_sum.y) %>%
@@ -418,7 +436,7 @@ MoriFn <- function() {
     mutate(mori_value = map2_dbl(data.x, data.y, MoriExe))   ####
 }
 
-gg_mori <- MoriFn() %>% 
+mori_df <- MoriFn() %>% 
   rename(flounder = predator_length_class.y,
          cod = predator_length_class.x) %>%
   mutate(flounder = case_when(
@@ -437,26 +455,50 @@ gg_mori <- MoriFn() %>%
   mutate(year_agg.x = case_when(year_agg.x == "(1962,1978]" ~ "1962-1978",
                            year_agg.x == "(1978,1990]" ~ "1979-1990",
                            year_agg.x == "(1990,2000]" ~ "1991-2000",
-                           year_agg.x == "(2000,2010]" ~ "2001-2010",
-                           year_agg.x == "(2010,2014]" ~ "2011-2014",
-                           year_agg.x == "(2014,2024]" ~ "2015-2024")) %>%
+                           year_agg.x == "(2000,2008]" ~ "2001-2008",
+                           year_agg.x == "(2008,2014]" ~ "2009-2014",
+                           year_agg.x == "(2014,2023]" ~ "2015-2023")) %>%
   mutate(quarter.x = case_when(quarter.x == "1" ~ "Q1",
-                               quarter.x == "4" ~ "Q4")) %>%
+                               quarter.x == "4" ~ "Q4")) 
+#For doing one Quarter at the time
+gg_mori_q1 <- mori_df %>%
+  filter(quarter.x == "Q1") %>%
   ggplot() +
-  aes(x = cod, 
-      y = flounder, 
+  aes(y = cod, 
+      x = flounder, 
       fill = mori_value, 
       label = mori_value) +
   geom_tile() +
   scale_fill_gradient2(low = "lightgreen", mid = "steelblue2", high = "darkred", midpoint = 0.72) +
-  facet_grid(year_agg.x~quarter.x) +
+  facet_wrap(year_agg.x~., ncol = 6) +
   theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
         legend.position = "bottom",
         legend.margin = margin(t=-7)) +
-  labs(fill = "Horn-Morisita dietary \ndistance index", x = "Cod length (cm)", y = "Flounder length (cm)")
+  labs(fill = "Horn-Morisita dietary \ndistance index", y = "Cod length (cm)", x = "Flounder length (cm)") +
+  coord_fixed()
 
-gg_mori
-#ggsave("../fig/diet_mori_v2.pdf", gg_mori, height = 7.5, width = 5)
+#gg_mori_q1
+#ggsave("../fig/diet_mori_q1.pdf", gg_mori_q1, height = 4.5, width = 8)
+
+#Both quarters
+gg_mori_v2 <- mori_df %>%
+  #filter(quarter.x == "Q4") %>%
+  ggplot() +
+  aes(y = cod, 
+      x = flounder, 
+      fill = mori_value, 
+      label = mori_value) +
+  geom_tile() +
+  scale_fill_gradient2(low = "lightgreen", mid = "steelblue2", high = "darkred", midpoint = 0.72) +
+  facet_grid(quarter.x~year_agg.x) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "bottom",
+        legend.margin = margin(t=-7)) +
+  labs(fill = "Horn-Morisita dietary \ndistance index", y = "Cod length (cm)", x = "Flounder length (cm)") +
+  coord_fixed()
+
+gg_mori_v2
+#ggsave("../fig/diet_mori_v2.pdf", gg_mori_q4, height = 7.3, width = 8)
 
 ```
 
@@ -478,8 +520,8 @@ gg_invert_fish <- new_stom_data %>%
     mutate(predator_length_class = ifelse(predator_code == "COD",
                                           paste0("cod_", cut(pred_length, c(10, 20, 25, 30, 40, 50,Inf))),
                                           paste0("flounder_", cut(pred_length, c(-Inf, 20,30,Inf))))) %>%
-  mutate(invert = Amphipoda + `other Arthropods` + `other invert` + Polychaeta + Bivalvia + Mysidae + `Saduria entomon` + other,
-         fish = `other Chord` + Clupeidae + `Clupea harengus` + `Gadus morhua` + `Sprattus sprattus` + `Platichthys flesus` + Gobiidae) |> 
+  mutate(invert = Amphipoda + `other Arthropods` + `other invert` + Polychaeta + Bivalvia + Mysidae + `Saduria entomon`,
+         fish = `other Chord` + Clupeidae + `Clupea harengus` + `Gadus morhua` + `Sprattus sprattus` + `Platichthys flesus` + Gobiidae) |>  #Not including specific `other`, as it only includes plant material, non-biological material and unidentified prey
   dplyr::select(invert, fish, year, predator_length_class) |>  #pred_size_class
   mutate(invert = invert / (invert + fish),
          fish = 1 - invert,
@@ -526,7 +568,8 @@ gg_age_length <- age_length_df %>%
            LngtClass < 1800 &
            Species == "Gadus morhua" &
            !is.na(IndWgt) &
-           IndWgt > 0) %>% 
+           IndWgt > 0 &
+           Country %in% c("SE", "DE", "PL")) %>% 
   group_by(Year, Species, Age, LngtClass, IndWgt) %>%
   summarise(CANoAtLngt = sum(CANoAtLngt)) %>%
   slice(rep(1:n(), times = CANoAtLngt)) %>%
