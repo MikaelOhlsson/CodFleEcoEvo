@@ -3,7 +3,7 @@ title: "Cod-Flounder empirical data"
 date: "10/31/2024"
 output: 
   html_document:
-    code_folding: hide
+    code_folding: show
     toc: true
     toc_depth: 3
     self_contained: true
@@ -35,16 +35,19 @@ theme_update(panel.grid = element_blank(),
 
 ```{r Loading, message = FALSE}
 
+# Only used for the already outdated condition stuff, which we do not currently include in the manuscript anyway
 dm <- read_csv(paste0("../data/old_stomach_data.csv")) 
-
 shape <- shapefile("../data/shapefiles/ICES-StatRec-mapto-ICES-Areas/StatRec_map_Areas_Full_20170124.shp")
-  pts <- SpatialPoints(cbind(dm$lon, dm$lat), 
+pts <- SpatialPoints(cbind(dm$lon, dm$lat), 
                      proj4string = CRS(proj4string(shape)))
-  dm$subdiv <- over(pts, shape)$Area_27
+dm$subdiv <- over(pts, shape)$Area_27
 
 # Biomass index
 cod_fle_index <- read_csv("../data/cod_fle_index.csv")
 
+# Cod and flounder body size development. 
+# Original data copied from Max BITS project folder. 
+# May need to add part of that to the manuscript methods. 
 cod_h <- read_csv("../data/cod_cpue_length_historical.csv") %>%
   filter(sub_div %in% c(25:28) &
            year >= 1978 & 
@@ -52,7 +55,7 @@ cod_h <- read_csv("../data/cod_cpue_length_historical.csv") %>%
            quarter %in% c(1,4) & 
            !is.na(length_class)
          ) |>
-  summarise(length_bio_dens = sum(biomass_density), .by = c(year, length_class)) |> 
+  summarise(length_bio_dens = sum(biomass_density), .by = c(year, length_class, sub_div)) |> 
   mutate(species = "cod") %>% 
   arrange(year, length_class)
 
@@ -67,7 +70,7 @@ cod_n <- read_csv("../data/cod_cpue_length.csv") %>%
   mutate(species = "cod") %>% 
   arrange(year, length_class)
 
-fle_h <- read_csv("../data/flounder_cpue_length_historical.csv") %>%
+fle_h <- read_csv("../data/fle_cpue_length_historical.csv") %>%
   filter(sub_div %in% c(25:28) & 
            year >= 1978 & 
            year <= 2015 & 
@@ -90,17 +93,16 @@ cod_fle_size <- bind_rows(cod_h, cod_n, fle_h, fle_n)
 
 
 # Age-Length data (ICES DATRAS Age Length Key, dl 2024-10-11)
+# Apparently quite uncertain data, and may open up for critizism if used.
 age_length_df <- read_csv("../data/age_length_2024-10-11.csv")
-#trawl_data <- read_csv("../data/trawl_data.csv")
 
-# 2024-10-27
-new_stom_data <- read_csv("../data/stomachs_CodFlecoevo_v1.csv") %>%
-  distinct() %>%#Remove duplicates from 1993
+# 2024-10-27 Newest stomach content data from Viktor
+new_stom_data <- read_csv("../data/stomachs_CodFlecoevo_v2.csv") %>% 
   mutate(prey_weight_tot = rowSums(.[3:17])) %>% 
   filter(prey_weight_tot > 0) %>% #Remove cods with empty stomachs
   filter(prey_weight_tot < pred_weight) %>% #Remove cods where the cod weighs less than the stomach content
   mutate(prey_pred_ratio = prey_weight_tot / pred_weight) %>% 
-  filter(quantile(prey_pred_ratio, 0.99) > prey_pred_ratio) #Remove upper 1% quantile of cods with heaviest stomach content to body weight ratio
+  filter(quantile(prey_pred_ratio, 0.99) > prey_pred_ratio) #Remove upper 1% quantile of cods with heaviest stomach content to body weight ratio, as some outliers still have unrealistic stomach content weights. 
 
 #Which year brackets to aggregate
 year_brackets <- c(1962, 1978, 1990, 2000, 2008, 2014, 2023)
@@ -110,17 +112,15 @@ year_brackets <- c(1962, 1978, 1990, 2000, 2008, 2014, 2023)
 
 Mean and 95-percentile body length data for cod and flounder (shown below with the biomass figure).
 
+I've tried looking into the cyclic trends up to the mid-2000's, nothing seems strange with the data itself at least. 
+
 ```{r 95quant, fig.height = 2.8, fig.width = 6.5, out.width="80%"}
 
 # Total density of hauls, used to calculate proportional density 
-dens_sum <- cod_fle_size %>%
-  group_by(year,  species) %>% #year_cat
-  summarise(tot_density = sum(length_bio_dens)) %>%
-  ungroup()
-
-# Proportional density
-dens_prop <- cod_fle_size %>%
-  left_join(dens_sum, by = c("year", "species")) %>% 
+dens_prop <- cod_fle_size %>% 
+  group_by(year, species) %>% #year_cat
+  mutate(tot_density = sum(length_bio_dens)) %>% 
+  ungroup() %>% 
   mutate(prop = length_bio_dens / tot_density)
 
 # Q4 Mean length based on density of length classes
@@ -129,12 +129,15 @@ dens_mean <- dens_prop %>%
   summarise(meanlength = sum(length_class * length_bio_dens) / sum(length_bio_dens)) %>%
   ungroup()
 
-gg_size_change <- dens_prop %>% 
+# 95 percentile obtained with the cumulative sum of the proportion of each length class, with the 95-percentile set as the length closest to the 95-percentile. 
+dens_95 <- dens_prop %>% 
   arrange(year, length_class) %>%
   group_by(year, species) %>% 
   mutate(cumprop = cumsum(prop)) %>% #filter(year == 1990 & species == "cod") %>% print(n = 200)
   filter(abs(cumprop-0.95) == min(abs(cumprop-0.95))) %>% 
-  ungroup() %>%
+  ungroup() 
+
+gg_size_change <- dens_95 %>%
   left_join(dens_mean) %>%
   rename(p95_length = length_class,
          mean_length = meanlength) %>%
@@ -166,6 +169,8 @@ gg_size_change <- dens_prop %>%
 # Cod and flounder biomass
 
 Note that biomass estimates here are actually the relative abundances instead of absolutes.
+
+Currently biomass estimates are much more limited in years, and uncertain if we can easily expand this. We also don't really use cod and flounder biomass for anything other than some loose reasoning in the manuscript at the moment, so may want to scrap. And if so, of course remember to remove that significant part from the methods. 
 
 ```{r Cod_Fle_Index, out.width="80%", fig.width=6, fig.height=6}
 gg_biomass <- cod_fle_index %>%
@@ -560,6 +565,10 @@ gg_invert_fish
 ```
 
 # Age-Length and Age-Weight
+
+Good trends, but unfortunately the data seems a bit sketchy as the actual age-determination is apparently quite uncertain when growth is poor, i.e. most of the recent years. Hence, we currently only refer to Mion et al 2021 and ICES 2022 regarding these trends in the discussion. 
+
+Facet numbers indicate each respective age class, cut off at 9 due to very few samples above that age. 
 
 ```{r}
 gg_age_length <- age_length_df %>% 
