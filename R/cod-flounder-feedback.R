@@ -7,7 +7,7 @@ Q <- function(z) pnorm(sqrt(2) * z)
 
 
 # Compute effective intrinsic growth rates from the mean traits m and the parameter list
-eff_intr_growth <- function(m, pars) {
+effective_intr_growth <- function(m, pars) {
   v <- pars$sigma^2 # Trait variances
   # Components of effective intrinsic growth:
   growth <- pars$rho * (pars$theta^2 - (pars$zstar - m)^2 - v) / pars$theta^2
@@ -18,7 +18,7 @@ eff_intr_growth <- function(m, pars) {
 
 
 # Compute rate of trait change from growth, from the mean traits m and the parameter list
-eff_evo_growth <- function(m, pars) {
+effective_evo_growth <- function(m, pars) {
   v <- pars$sigma^2 # Trait variances
   # Components of trait effects of (effective) intrinsic growth:
   growth_evo <- 2 * pars$rho * v * (pars$zstar - m) / pars$theta^2
@@ -49,8 +49,8 @@ competition <- function(m, pars) {
 eqs <- function(time, state, pars) {
   n <- state[1:2] # Species densities
   m <- state[3:4] # Species trait means
-  b <- eff_intr_growth(m, pars) # Effective intrinsic growth
-  g <- eff_evo_growth(m, pars) # Trait effects of (effective) intrinsic growth
+  b <- effective_intr_growth(m, pars) # Effective intrinsic growth
+  g <- effective_evo_growth(m, pars) # Trait effects of (effective) intrinsic growth
   coeff <- competition(m, pars) # Ingredients for effects of competition
   # Dynamical equations:
   dndt <- n * (b - drop(coeff$alpha %*% n)) # Equations for abundances
@@ -72,13 +72,17 @@ organize_results <- function(sol, pars) {
 }
 
 
+# Integrate equations, where initial conditions are given in a table formatted just like
+# the final output (this makes repeated integration easier)
 integrate_scenario <- function(pars, initCond, tseq) {
-  ic <- c(initCond$n, initCond$m)
+  ic <- c(initCond$n, initCond$m) # Extract initial densities and traits from table
   deSolve::ode(func = pars$model, y = ic, parms = pars, times = tseq, method = "bdf") |>
     organize_results(pars)
 }
 
 
+# Generate data for a sequence of fishing efforts, always using the final state of the
+# previous run as initial conditions for the next
 bifurcation_sim <- function(initCond, fishing_efforts, pars,
                              tseq = seq(0, 200, by = 0.1)) {
   state <- initCond |> mutate(fishing_effort = fishing_efforts[1], .before = 1)
@@ -93,65 +97,6 @@ bifurcation_sim <- function(initCond, fishing_efforts, pars,
     state <- bind_rows(state, lastState)
   }
   state |> slice(-c(1, 2))
-}
-
-
-# Solve ODEs and put results in a tidy table
-integrate_model <- function(pars, ic, tseq) {
-  pars0 <- pars # Define parameter list that is just like the one passed in via pars,
-  pars0$eta <- 0 # but with fishing set to zero
-  # Solve equations with zero fishing:
-  sol0 <- integrate_scenario(pars0, ic, tseq) |> mutate(regime = "before fishing")
-  # Scrape new initial conditions, as the final state of the no-fishing solution:
-  ninit_new <- sol0 |> filter(time == max(tseq)) |> pull(n)
-  minit_new <- sol0 |> filter(time == max(tseq)) |> pull(m)
-  ic_new <- tibble(n = ninit_new, m = minit_new)
-  # Now solve from those initial conditions with fishing turned on:
-  sol1 <- integrate_scenario(pars, ic_new, tseq) |> mutate(regime = "during fishing") |>
-    mutate(time = time + max(tseq)) # Times are after no-fishing has ended
-  # Scrape new initial conditions, as the after-state of the fishing solution:
-  ninit_after <- sol1 |> filter(time == 2*max(tseq)) |> pull(n)
-  minit_after <- sol1 |> filter(time == 2*max(tseq)) |> pull(m)
-  ic_after <- tibble(n = ninit_after, m = minit_after)
-  # Solve equations with zero fishing after fishing scenario:
-  sol <- integrate_scenario(pars0, ic_after, tseq) |> mutate(regime = "after fishing") |>
-    mutate(time = time + 2*max(tseq)) # Times are after no-fishing has ended
-  sol0 |>
-    filter(time < max(time)) |> # Remove duplicated time point
-    bind_rows(sol1, sol) # Join two tables
-}
-
-
-plot_density <- function(sol) {
-  sol |>
-    ggplot(aes(x = time, y = n, colour = species)) +
-    geom_line() +
-    labs(x = "Time") +
-    scale_y_continuous(name = "Density", limits = c(0, NA)) +
-    scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
-    geom_vline(xintercept = c(max(sol$time) / 3, 2* max(sol$time) / 3),
-               alpha = 0.6, linetype = "dotted") +
-    theme_bw() +
-    theme(panel.grid = element_blank(),
-          strip.background = element_rect(fill = "white"),
-          legend.position = "none")
-}
-
-
-plot_trait <- function(sol) {
-  sol |>
-    ggplot(aes(x = time)) +
-    geom_ribbon(aes(ymin = m - sigma, ymax = m + sigma, fill = species), alpha = 0.15) +
-    geom_line(aes(y = m, colour = species)) +
-    geom_vline(xintercept = c(max(sol$time) / 3, 2* max(sol$time) / 3),
-               alpha = 0.6, linetype = "dotted") +
-    labs(x = "Time", y = "Trait") +
-    scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
-    scale_fill_manual(values = c("cornflowerblue", "darkseagreen")) +
-    theme_bw() +
-    theme(panel.grid = element_blank(),
-          strip.background = element_rect(fill = "white"),
-          legend.position = "none")
 }
 
 
@@ -181,26 +126,21 @@ generate_params <- function(w = 1, alpha0 = 1, alphaI = 0.5, theta = 5, rho = 5,
 
 
 
-bifurc_data_with_feedback <-
-  bifurcation_sim(
-    tibble(species = c("cod", "flounder"), n = c(10, 10), m = c(1, 0)),
-    fishing_efforts = c(seq(0, 3, by = 0.01), seq(3, 0, by = -0.01)[-1]),
-    generate_params(feedback = "with feedback")
+bifurcation_data <-
+  crossing(
+    initCond = list(tibble(species = c("cod", "flounder"), n = c(10, 10), m = c(1, 0))),
+    fishing_efforts = list(c(seq(0, 3, by = 0.01), seq(3, 0, by = -0.01)[-1])),
+    feedback = c("no feedback", "with feedback")
   ) |>
-  mutate(feedback = "with feedback")
+  mutate(pars = map(feedback, \(x) generate_params(feedback = x))) |>
+  mutate(sol = pmap(list(initCond, fishing_efforts, pars), bifurcation_sim))
 
-bifurc_data_no_feedback <-
-  bifurcation_sim(
-    tibble(species = c("cod", "flounder"), n = c(10, 10), m = c(1, 0)),
-    fishing_efforts = c(seq(0, 3, by = 0.01), seq(3, 0, by = -0.01)[-1]),
-    generate_params(feedback = "no feedback")
-  ) |>
-  mutate(feedback = "no feedback")
 
-bind_rows(bifurc_data_no_feedback, bifurc_data_with_feedback) |>
+bifurcation_data |>
+  unnest(sol) |>
   filter(species == "cod") |>
-  mutate(species = ifelse(feedback == "no feedback", "Cod; no feedback on flounder",
-                          "Cod; with feedback on flounder")) |>
+  mutate(species = ifelse(feedback == "no feedback", "Cod, without feedback on flounder",
+                          "Cod, with feedback on flounder")) |>
   (\(x) bind_rows(x, tibble(
     fishing_effort = unique(x$fishing_effort),
     species = "Flounder", n = NA, m = 0, feedback = NA))
@@ -215,20 +155,4 @@ bind_rows(bifurc_data_no_feedback, bifurc_data_with_feedback) |>
        y = expression(paste("Mean trait value, ", mu))) +
   theme_bw() +
   theme(panel.grid = element_blank())
-#ggsave("../fig/fig-SI-bifurcation.pdf", width = 6, height = 2.8)
-
-tibble(feedback = c("with feedback", "no feedback"), fishing_effort = 2.5) |>
-  mutate(pars = map2(feedback, fishing_effort,
-                     \(f, e) generate_params(feedback = f, eta = e))) |>
-  mutate(ninit = list(c(19.1, 17.2)), # Initial species densities
-         minit = list(c(0.97, 0)), # Initial species trait means
-         ic = map2(ninit, minit, \(n, m) tibble(n = n, m = m)),
-         tseq = list(seq(0, 200, by = 0.1))) |> # Sampling points in time
-  mutate(sol = pmap(list(pars, ic, tseq), integrate_model)) |>
-  select(feedback, fishing_effort, sol) |>
-  crossing(plot_type = c("density", "trait")) |>
-  mutate(plot_type = ifelse(plot_type=="trait", list(plot_trait), list(plot_density))) |>
-  mutate(plot = map2(sol, plot_type, \(s, p) p(s))) |>
-  slice(c(1, 3, 2, 4)) |>
-  pull(plot) |>
-  cowplot::plot_grid(plotlist = _, nrow = 2, ncol = 2)
+#ggsave("../fig/fig-SI-bifurcation.pdf", width = 6.2, height = 2.8)

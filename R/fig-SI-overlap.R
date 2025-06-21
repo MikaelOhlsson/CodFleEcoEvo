@@ -25,10 +25,10 @@ ellipseframe <- function(m = rep(0, 2), P = diag(2), p = 0.95, res = 101) {
 tibble(codMean = list(c(2, -1), c(0, -1), c(-2, -1)),
        flounderMean = list(c(0, 1), c(0, 1), c(0, 1))) |>
   mutate(codBody = map_dbl(codMean, \(x) x[1])) |>
-  mutate(cod = map(codMean, \(m) ellipseframe(m))) |>
-  mutate(flounder = map(flounderMean, \(m) ellipseframe(m))) |>
+  mutate(Cod = map(codMean, \(m) ellipseframe(m))) |>
+  mutate(Flounder = map(flounderMean, \(m) ellipseframe(m))) |>
   select(!ends_with("Mean")) |>
-  pivot_longer(cod | flounder, names_to = "species", values_to = "value") |>
+  pivot_longer(Cod | Flounder, names_to = "species", values_to = "value") |>
   unnest(value) |>
   mutate(codBody = case_when(
     codBody == max(codBody) ~ "Cod larger than flounder",
@@ -38,10 +38,10 @@ tibble(codMean = list(c(2, -1), c(0, -1), c(-2, -1)),
   ggplot(aes(x = x, y = y, color = species, fill = species)) +
   geom_polygon(alpha = 0.2) +
   labs(x = "Body size", y = "Other trait") +
-  scale_color_manual(name = "Species", values = c("cornflowerblue", "darkseagreen")) +
-  scale_fill_manual(name = "Species", values = c("cornflowerblue", "darkseagreen")) +
+  scale_color_manual(name = NULL, values = c("cornflowerblue", "darkseagreen")) +
+  scale_fill_manual(name = NULL, values = c("cornflowerblue", "darkseagreen")) +
   facet_grid(. ~ codBody) +
   theme_bw() +
   theme(panel.grid = element_blank(),
         axis.ticks = element_blank(), axis.text = element_blank())
-#ggsave("fig-SI-overlap.pdf", width = 7, height = 2)
+#ggsave("../fig/fig-SI-overlap.pdf", width = 7, height = 2)
