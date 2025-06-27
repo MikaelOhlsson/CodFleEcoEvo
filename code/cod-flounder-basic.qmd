@@ -1,0 +1,288 @@
+---
+title: "Cod-Flounder Eco-Evolutionary Model"
+format:
+  html:
+    theme: cosmo
+    embed-resources: true
+knitr:
+  opts_chunk:
+    eval: true
+    echo: true
+    message: false
+    warning: false
+    fig-align: center
+execute: 
+  cache: false
+editor_options: 
+  chunk_output_type: console
+latex-tinytex: false
+---
+
+
+
+The main governing equation for cod body size $\mu$ (Supporting Information, "Details of the eco-evolutionary model") reads
+
+$$
+\begin{aligned}
+\frac{\text{d} \mu}{\text{d} t}
+= h_C^2 & \left[
+\frac{2\varrho\sigma_C^2}{\theta^2}\left(z^*-\mu\right)-
+\frac{\eta\sigma_C^2}{\sqrt{\pi(2\sigma_C^2+\tau^2)}}
+\exp\left( -\frac{(\mu-\varphi)^2}
+{2\sigma_C^2+\tau^2}\right) \right.
+\\ & \quad -
+\frac{\kappa\sigma_C^2}{\sqrt{\pi(2\sigma_C^2+\nu^2)}}
+\exp\left(
+-\frac{(\mu-\zeta)^2}{2\sigma_C^2+\nu^2} \right)
+\\ & \quad + \left.
+\frac{\sigma_C^2 N_F\, \alpha_0 \alpha_I}
+{\sqrt{2\pi(\sigma_C^2 + \sigma_F^2 + \omega^2)^3}}
+\exp \left( -\frac{\mu^2}
+{2(\sigma_C^2 + \sigma_F^2 + \omega^2)} \right)
+\mu \right] .
+\end{aligned}
+$$ {#eq-m}
+
+Its parameters, with their respective names in R, default values, and descriptions, are in the table below.
+
+| Parameter    | R symbol | Value        | Description                                  |
+|--------------|----------|--------------|----------------------------------------------|
+| $\mu$        | m        | variable     | Cod mean (scaled) body size                  |
+| $\mu_F$      | mF       | $0$          | Flounder mean (scaled) body size             |
+| $h_C^2$      | h2       | $1/2$        | Heritability of cod body size                |
+| $\varrho$    | rho      | $5$          | Intrinsic growth scaling parameter           |
+| $\sigma_C$   | s        | $1/2$        | Cod body size standard deviation             |
+| $\sigma_F$   | sF       | $1/2$        | Flounder body size standard deviation        |
+| $\theta$     | theta    | $5$          | Trait range where pop. growth is possible    |
+| $z^*$        | zstar    | $1$          | Body size where cod pop. growth is ideal     |
+| $\eta$       | eta      | $0$--$2$     | Fishing intensity                            |
+| $\varphi$    | phi      | $0$          | Fishing inflection point                     |
+| $\tau$       | tau      | $1/2$        | Fishing transition width                     |
+| $\kappa$     | kappa    | $2$          | Hypoxic effect intensity                     |
+| $\zeta$      | zeta     | $1$          | Hypoxic effect inflection point              |
+| $\nu$        | nu       | $3/2$        | Hypoxic effect transition width              |
+| $N_F$        | Fpop     | $6$          | Flounder population density                  |
+| $\omega$     | w        | $1/3$        | Competition width of body size               |
+| $\alpha_0$   | alpha0   | $1/\sqrt{2}$ | Baseline competition from body size          |
+| $\alpha_I$   | alphaI   | $1$          | Competition from traits other than body size |
+
+
+To implement the model, we define a function to compute @eq-m:
+
+```{r main_funcs}
+library(tidyverse) # Efficient data manipulation and plotting
+library(patchwork) # Joining plots in a grid
+
+
+# Rate of change of cod body mass, as a function of the body mass m itself
+# plus model parameters
+dmdt <- function(m, mF = 0, h2 = 0.5, rho = 5, s = 1/2, sF = 1/2, theta = 5,
+                 zstar = 1, eta = 0, phi = 0, tau = 1/2, kappa = 2, zeta = 1,
+                 nu = 3/2, Fpop = 6, w = 1/3, alpha0 = 1/sqrt(2), alphaI = 1) {
+  ((2*rho*s^2 / theta^2) * (zstar - m) -
+     eta*s^2 / sqrt(pi*(2*s^2 + tau^2)) * exp(-(m - phi)^2 / (2*s^2 + tau^2)) -
+     kappa*s^2 / sqrt(pi*(2*s^2 + nu^2)) * exp(-(m - zeta)^2 / (2*s^2 + nu^2)) -
+     s^2*Fpop*alpha0*alphaI*(mF - m) / sqrt(2*pi * (s^2 + 2 * sF^2 + w^2)^3) *
+     exp(-(m - mF)^2 / (2 * (s^2 + sF^2 + w^2)))) * h2
+}
+```
+
+Illustrating body size distributions before and after fishing:
+
+```{r density_before_fishing}
+# Small table of labels, used in the plot below
+body_sizes_before_labels <-
+  tibble(body_size = c(0, 1.4),
+         density = c(1, 1),
+         species = c("flounder", "cod"),
+         lab = c("b", "c"))
+
+body_sizes_before <-
+  tibble(body_size = seq(-2.4, 2.4, l = 201)) |>
+  mutate(flounder = exp(-(body_size)^2 / (2 * 0.55^4)),
+         cod = 1 * exp(-(body_size - 1.4)^2 / (2 * 0.55^4))) |> 
+  pivot_longer(cols = c(flounder, cod),
+               names_to = "species",
+               values_to = "density") |>
+  mutate(density = if_else(density < 1e-4, NA_real_, density)) |>
+  ggplot(aes(x = body_size, y = density, ymin = 0, ymax = density,
+             colour = species, fill = species)) +
+  geom_line(na.rm = TRUE) +
+  geom_vline(xintercept = 1, linetype = "dashed") +
+  scale_shape_manual(values = c(22,21)) + 
+  geom_ribbon(colour = NA, alpha = 0.2, na.rm = TRUE) +
+  scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
+  scale_fill_manual(values = c("cornflowerblue", "darkseagreen")) +
+  scale_y_continuous(limits = c(0,1.25), breaks = c(0, .25, .5, .75, 1)) +
+  geom_point(data = body_sizes_before_labels, size = 3, color = "black",
+             aes(x = body_size, y = density, shape = species, color = species)) +
+  geom_text(data = body_sizes_before_labels, nudge_x = 0.2, nudge_y = 0.08,
+            color = "black", aes(x = body_size, y = density, label = lab)) +
+  labs(x = expression(paste("mean body size ", mu))) +
+  guides(color = "none", fill = "none", shape = "none") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
+```
+
+```{r density_after_fishing}
+# Another small table of labels, for the next plot
+body_sizes_after_labels <-
+  tibble(body_size = c(0, -1),
+         density = c(1, 1),
+         species = c("flounder", "cod"),
+         lab = c("b", "a"))
+
+body_sizes_after <-
+  tibble(body_size = seq(-2.4, 2.4, l = 201)) |>
+  mutate(flounder = exp(-(body_size)^2 / (2 * 0.55^4)),
+         cod = 1 * exp(-(body_size + 1.0)^2 / (2 * 0.55^4))) |>
+  pivot_longer(cols = c(flounder, cod),
+               names_to = "species",
+               values_to = "density") |>
+  mutate(density = if_else(density < 1e-4, NA_real_, density)) |>
+  ggplot(aes(x = body_size, y = density, ymin = 0, ymax = density,
+             colour = species, fill = species)) +
+  geom_line(na.rm = TRUE) +
+  geom_vline(xintercept = 1, linetype = "dashed") +
+  scale_shape_manual(values = c(23,21)) + 
+  geom_ribbon(colour = NA, alpha = 0.2, na.rm = TRUE) +
+  scale_colour_manual(values = c("cornflowerblue", "darkseagreen")) +
+  scale_fill_manual(values = c("cornflowerblue", "darkseagreen")) +
+  scale_y_continuous(limits = c(0,1.25), breaks = c(0, .25, .5, .75, 1)) +
+  geom_point(data = body_sizes_after_labels, size = 3, color = "black",
+             aes(x = body_size, y = density, shape = species, color = species)) +
+  geom_text(data = body_sizes_after_labels, nudge_x = 0.2, nudge_y = 0.08,
+            color = "black", aes(x = body_size, y = density, label = lab)) +
+  labs(x = expression(paste("mean body size ", mu))) +
+  guides(color = "none", fill = "none", shape = "none") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
+```
+
+Illustrating the body size dependent rate of change for cod body size, with- and without fishing:
+
+```{r bodysize_nofishing}
+# Small table of labels, for the next plot
+equilib_nofish <-
+  tibble(x = c(-1.205, 0.058, 1.21),
+         y = c(0, 0, 0),
+         sh = as_factor(c("small cod","flounder","large cod")),
+         lab = c("a", "b", "c"))
+
+bodysize_eqb_nofish <-
+  tibble(m = seq(-2.0, 2.0, l = 2001)) |>
+  mutate(nofishing = dmdt(m, eta = 0)) |>
+  pivot_longer(cols = contains("fishing")) |>
+  mutate(name = fct_relevel(name, "nofishing")) |>
+  filter(name == "nofishing") |>
+  ggplot(aes(x = m, y = value)) +
+  geom_line(colour = "cornflowerblue") +
+  scale_x_continuous(expand = expansion(0, 0)) +
+  geom_hline(yintercept = 0, alpha = 0.4, linetype = "solid") +
+  geom_vline(xintercept = 1, alpha = 1, linetype = "dashed") +
+  geom_point(data = equilib_nofish, aes(x,y, shape = sh, fill = sh), size  = 3) +
+  scale_shape_manual(values = c(23, 21, 22)) +
+  scale_color_manual(values = c("cornflowerblue", "darkseagreen", "cornflowerblue")) +
+  scale_fill_manual(values = c("cornflowerblue", "darkseagreen", "cornflowerblue")) +
+  geom_text(data = equilib_nofish, aes(x, y, label = lab),
+            nudge_x = 0.25, nudge_y = 0.08, color = "black") +
+  labs(x = expression(paste("mean body size ", mu)),
+       y = expression(paste("d", mu/d, "t")),
+       shape = NULL,
+       fill = NULL) +
+  scale_y_continuous(limits = c(-0.2, 0.2)) +
+  theme_bw() +
+  theme(legend.position = "bottom",
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
+```
+
+```{r bodysize_fishing}
+# Small table of labels, for the next plot
+equilib_fish <-
+  tibble(x = c(-1.3, 0),
+         y = c(0, 0),
+         sh = as_factor(c(1, 2)),
+         lab = c("a", "b"))
+
+bodysize_eqb_fish <-
+  tibble(m = seq(-2.0, 2.0, l = 2001)) |>
+  mutate(fishing = dmdt(m, eta = 2)) |>
+  pivot_longer(cols = contains("fishing")) |>
+  mutate(name = fct_relevel(name, "fishing")) |>
+  filter(name == "fishing") |> 
+  ggplot(aes(x = m, y = value)) +
+  geom_line(colour = "cornflowerblue") +
+  scale_shape_manual(values = c(23, 21), guide = "none") +
+  geom_hline(yintercept = 0, alpha = 0.4, linetype = "solid") +
+  geom_vline(xintercept = 1, alpha = 1, linetype = "dashed") +
+  scale_x_continuous(expand = expansion(0, 0)) +
+  geom_point(data = equilib_fish, aes(x, y, shape = sh),
+             size = 3, fill = c("cornflowerblue", "darkseagreen")) +
+  geom_text(data = equilib_fish, aes(x, y, label = lab),
+            nudge_x = 0.25, nudge_y = 0.08, color = "black") +
+  labs(x = expression(paste("mean body size ", mu)),
+       y = expression(paste("d", mu/d, "t"))) +
+  guides(shape = "none") +
+  scale_y_continuous(limits = c(-0.2, 0.2)) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
+```
+
+Putting it all together (Figure 1 in main text):
+
+```{r figure1}
+#| out.width: 80%
+#| fig-width: 6.5
+#| fig-height: 7.8
+
+show(
+  body_sizes_before + bodysize_eqb_nofish +
+    body_sizes_before + bodysize_eqb_fish +
+    body_sizes_after + bodysize_eqb_nofish +
+    plot_layout(widths = c(1, 0.8), heights = c(1, 1, 1), tag_level = "new") +
+    plot_annotation(tag_levels = "A") +
+    plot_layout(guides = "collect") & theme(legend.position = "bottom") &
+    theme(plot.tag.position = c(0.01, 0.98),
+          plot.tag = element_text(hjust = 0, vjust = 1))
+)
+```
+
+Scenarios with three different fishing intensities, to show how a gradual increase in fishing leads to the rightmost two equilibria disappearing in a saddle-node bifurcation:
+
+```{r bodysize_varying_fishing_intensity}
+#| out-width: 90%
+#| fig-width: 7.25
+#| fig-height: 3
+
+tibble(m = seq(-2.0, 2.0, l = 201)) |> 
+  mutate(nofishing = dmdt(m, eta = 0),
+         fishing = dmdt(m, eta = 1),
+         intfishing = dmdt(m, eta = 2)) |>
+  pivot_longer(cols = contains("fishing")) |>
+  mutate(name = case_match(
+    name,
+    "nofishing"  ~ "bold(A)~-~No~fishing~(eta == 0)",
+    "fishing"    ~ "bold(B)~-~Some~fishing~(eta == 1)",
+    "intfishing" ~ "bold(C)~-~Intense~fishing~(eta == 2)"
+  )) |>
+  ggplot(aes(x = m, y = value)) +
+  geom_line(colour = "cornflowerblue") +
+  geom_hline(yintercept = 0, alpha = 0.4, linetype = "dashed") +
+  labs(x = expression(paste("Body size (", mu, ")")),
+       y = expression(paste("Body size rate of change (d", mu/d, "t)"))) +
+  scale_y_continuous(limits = c(-0.2, 0.2)) +
+  facet_grid(. ~ name, labeller = label_parsed) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
+```
+

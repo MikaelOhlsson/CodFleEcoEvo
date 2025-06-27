@@ -34,10 +34,10 @@ theme_update(panel.grid = element_blank(),
 ```{r Loading, message = FALSE}
 
 # Biomass index (data from Lindmark 2023, specific for subdiv 25-28)
-  cod_fle_index <- read_csv("../data/cod_fle_index.csv")
+  cod_fle_index <- read_rds("../data/cod_fle_index.rds")
 
 # Cod and flounder historical data of body size development. 
-  cod_h <- read_csv("../data/cod_cpue_length_historical.csv") %>%
+  cod_h <- read_rds("../data/cod_cpue_length_historical.rds") %>%
     filter(sub_div %in% c(25:28) &
              year >= 1978 & 
              year <= 2015 & 
@@ -48,7 +48,7 @@ theme_update(panel.grid = element_blank(),
     mutate(species = "cod") %>% 
     arrange(year, length_class)
   
-  cod_n <- read_csv("../data/cod_cpue_length.csv") %>%
+  cod_n <- read_rds("../data/cod_cpue_length.rds") %>%
     filter(sub_div %in% c(25:28) & 
              year >= 2016 & 
              quarter %in% c(1,4) &
@@ -59,7 +59,7 @@ theme_update(panel.grid = element_blank(),
     mutate(species = "cod") %>% 
     arrange(year, length_class)
   
-  fle_h <- read_csv("../data/fle_cpue_length_historical.csv") %>%
+  fle_h <- read_rds("../data/fle_cpue_length_historical.rds") %>%
     filter(sub_div %in% c(25:28) & 
              year >= 1978 & 
              year <= 2015 & 
@@ -69,7 +69,7 @@ theme_update(panel.grid = element_blank(),
     mutate(species = "flounder") %>% 
     arrange(year, length_class)
   
-  fle_n <- read_csv("../data/fle_cpue_length.csv") %>%
+  fle_n <- read_rds("../data/fle_cpue_length.rds") %>%
     filter(sub_div %in% c(25:28) & 
              year >= 2016 & 
              quarter %in% c(1,4) &
@@ -83,7 +83,7 @@ theme_update(panel.grid = element_blank(),
 
 
 # 2024-10-27 stomach content data
-  new_stom_data <- read_csv("../data/stomachs_CodFlecoevo_v2.csv") %>% 
+  new_stom_data <- read_rds("../data/stomachs_CodFlecoevo_v2.rds") %>% 
     mutate(prey_weight_tot = rowSums(.[3:17])) %>% 
     filter(prey_weight_tot > 0) %>% #Remove cods with empty stomachs
     filter(prey_weight_tot < pred_weight) %>% #Remove cods where the cod weighs less than the stomach content

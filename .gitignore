@@ -11,6 +11,8 @@
 *.fdb_latexmk
 *.fls
 *.rubbercache
+*.html
+*.HTML
 */rstudio
 *.Rproj
 .Rproj.user
