@@ -109,10 +109,6 @@ Mean and 95-percentile body length data for cod and flounder (shown below with t
 Includes years 1978-2023.
 
 ```{r}
-#| fig-height: 2.8
-#| fig-width: 6.5
-#| out-width: 80%
-
 # Total density of hauls, used to calculate proportional density 
 dens_prop <- cod_fle_size |>
   mutate(tot_density = sum(length_bio_dens),
@@ -152,8 +148,8 @@ gg_size_change <- dens_95 |>
   geom_point() +
   geom_smooth(formula = y~poly(x,2), method = "lm", se = FALSE) +
   scale_color_manual(values = c(brewer.pal(n = 8, name = "Dark2")[2:3])) +
-  facet_wrap(. ~ species) + 
-  labs(x = "Year", y = "Length (cm)", color = "Length Variable") +
+  facet_wrap(. ~ species, scales = "free_y") + 
+  labs(x = "Year", y = "Length (cm)", color = "Length variable") +
   theme_bw() +
   theme(panel.grid = element_blank(),
         strip.background = element_rect(fill = "white", colour = "black"),
@@ -174,7 +170,7 @@ gg_biomass <- cod_fle_index |>
   geom_line(linewidth = 1) +
   geom_ribbon(alpha = 0.2, color = NA) +
   scale_x_continuous(limits = c(1978,2023)) +
-  facet_wrap(. ~ species) +
+  facet_wrap(. ~ species, scales = "free_y") +
   labs(x = "Year", y = "Biomass estimate (1000 t)",
        color = "Species", fill = "Species") +
   theme_bw() +
@@ -432,7 +428,7 @@ new_stom_data |>
   geom_smooth(formula = y ~ s(x, k = 4), method = "gam", se = FALSE) +
   geom_point() +
   scale_color_manual(values = c("steelblue", "darkgoldenrod2")) +
-  facet_wrap(predator_length_class ~ ., scales = "free") + 
+  facet_wrap(predator_length_class ~ ., scales = "fixed") + 
   theme_bw() +
   theme(panel.grid = element_blank(),
         strip.background = element_rect(fill = "white", colour = "black"),
@@ -440,7 +436,7 @@ new_stom_data |>
         legend.margin = margin(t = -10)) +
   labs(x = "Year",
        y = "Dietary weight proportion",
-       color = "Prey type: ")
+       color = "Prey type ")
 ```
 
 
@@ -627,7 +623,7 @@ mori_df |>
         axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
         legend.position = "bottom",
         legend.margin = margin(t = -7)) +
-  labs(fill = "Horn-Morisita dietary distance index: \n",
+  labs(fill = "Horn-Morisita dietary distance index \n",
        y = "Cod length (cm)",
        x = "Flounder length (cm)")
 ```
