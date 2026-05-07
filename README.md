@@ -1,6 +1,6 @@
 # CodFleEcoEvo
 
-Code, data, and manuscript for **Alternative eco-evolutionary stable states hinder recovery in harvested fish populations**.
+Code, data, and manuscript for **Eco-evolutionary dynamics hinder recovery in harvested populations**.
 
 Authors: Mikael Ohlsson\*, György Barabás, Max Lindmark, Michele Casini, Viktor Thunell, Valerio Bartolino, Mattias Sköld, and Anna Eklöf
 
