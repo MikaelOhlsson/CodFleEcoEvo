@@ -1,0 +1,14 @@
+\ProvidesFile{ele.cbx}[biblatex style for Ecology Letters]
+
+\RequireCitationStyle{authoryear-comp}
+
+\DeclareCiteCommand{\cite}[\mkbibbrackets]
+  {\usebibmacro{prenote}}
+  {\usebibmacro{citeindex}%
+   \usebibmacro{cite}}
+  {\multicitedelim}
+  {\usebibmacro{postnote}}
+
+\DeclareNameAlias{default}{family-given}
+
+\endinput

@@ -249,7 +249,7 @@ Finally, we plot the results (Figure S2):
 
 ```{r}
 #| fig-width: 6.2
-#| fig-height: 2.8
+#| fig-height: 4.6
 #| out-width: 100%
 
 bifurcation_data |>
@@ -265,7 +265,16 @@ bifurcation_data |>
     species = "Flounder", n = NA, m = 0, feedback = NA))
   )() |>
   mutate(species = as_factor(species)) |>
-  ggplot(aes(x = fishing_effort, y = m,
+  # One panel for the mean body size and one for the biomass of cod:
+  pivot_longer(c(m, n), names_to = "variable", values_to = "value") |>
+  filter(!is.na(value)) |>
+  mutate(variable = case_match(
+    variable,
+    "m" ~ "Mean~trait~value*','~mu",
+    "n" ~ "Cod~biomass*','~N[C]"
+  )) |>
+  mutate(variable = fct_relevel(variable, "Mean~trait~value*','~mu")) |>
+  ggplot(aes(x = fishing_effort, y = value,
              colour = species, linetype = species)) +
   geom_path() +
   scale_colour_manual(
@@ -276,10 +285,17 @@ bifurcation_data |>
     name = NULL,
     values = c("solid", "solid", "dashed")
   ) +
-  scale_y_continuous(limits = c(-2.2, 2.2)) +
-  labs(x = expression(paste("Fishing effort, ", eta)),
-       y = expression(paste("Mean trait value, ", mu))) +
+  facet_wrap(~ variable, ncol = 1, scales = "free_y",
+             strip.position = "left", labeller = label_parsed) +
+  guides(colour = guide_legend(ncol = 2, byrow = TRUE),
+         linetype = guide_legend(ncol = 2, byrow = TRUE)) +
+  labs(x = expression(paste("Fishing effort, ", eta)), y = NULL) +
   theme_bw() +
-  theme(panel.grid = element_blank())
+  theme(panel.grid = element_blank(),
+        strip.placement = "outside", # Facet labels act as y-axis titles
+        strip.background = element_blank(),
+        strip.text = element_text(size = rel(1)),
+        legend.position = "bottom",
+        legend.box.spacing = unit(0, "pt"))
 ```
 
