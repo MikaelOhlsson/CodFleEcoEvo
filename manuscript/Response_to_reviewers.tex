@@ -1,0 +1,247 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}
+\usepackage[a4paper, margin=2.5cm]{geometry}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{parskip}
+\usepackage[
+  colorlinks=true,
+  linkcolor=NavyBlue,
+  citecolor=NavyBlue,
+  urlcolor=NavyBlue
+]{hyperref}
+
+% ---------- Settings ----------
+% Reviewer comments in grey italics, our responses in normal text
+\definecolor{commentgrey}{gray}{0.35}
+
+\newenvironment{revcomment}[1]
+  {\par\medskip\noindent\textbf{#1}\par\begin{quote}\itshape\color{commentgrey}}
+  {\end{quote}}
+
+\newcommand{\response}{\par\noindent\textbf{Response:} }
+
+\renewcommand{\thefigure}{R\arabic{figure}}
+\renewcommand{\theequation}{R\arabic{equation}}
+
+% Red placeholder for text still to write
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
+\title{Response to reviewers\\[0.5ex]
+\large ECY26-0687: ``Eco-evolutionary dynamics hinder recovery in harvested populations''}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\todo{Short opening paragraph thanking the editor and reviewers, summarising the main changes.}
+
+Reviewer and editor comments are shown in grey italics; our responses follow each comment. Line numbers refer to the revised manuscript.
+
+%==========================================================
+\section*{Editor}
+%==========================================================
+
+\begin{revcomment}{Editor, general}
+Thank you for submitting your manuscript to Ecology. We appreciate the work you have accomplished. I am willing to consider a revised version for publication in the journal, assuming that you are able to modify the manuscript according to the recommendations.
+
+Both reviewers found the central idea, that selection driven trait shifts can lock a population into a competitively disadvantaged state and impede recovery even after fishing pressure is removed, to be novel and exciting, and both want to see this work in a stronger form. I agree with that assessment. However, several issues need to be addressed in your revision.
+\end{revcomment}
+
+\response \todo{Thank the editor.}
+
+% ---------------------------------------------------------
+\begin{revcomment}{E1. Clarity of the model}
+First, both reviewers struggled to follow key parts of the theoretical model, especially the terms in Equation 3. Reviewer 1 specifically notes difficulty with theta, Q(z), rho, tau, and kappa, and points to your treatment of alpha\_ij as a model of clarity that should be extended to the rest of the equation. Please define notation such as i = C, F and the competing selection forces of hypoxia and fishing explicitly and early in the manuscript, add a parameter table with the values used to generate Figure 1 in the main text, and consider a schematic figure that maps the terms of the model onto the biological forces they represent.
+\end{revcomment}
+
+\response \todo{Notation and selection forces defined early; term-by-term explanation of Eqs.~3--4 (feels like that IS there though?); parameter table in main text; new schematic figure. See also R1.2.}
+
+% ---------------------------------------------------------
+\begin{revcomment}{E2. Sensitivity analysis and tipping-point framing}
+Second, the manuscript needs a sensitivity analysis addressing the generality of the trapping result. Reviewer 1 asks how dependent the phenomenon in Figure 1 is on the specific parameters chosen and requests an analysis, similar in spirit to Figure S2, showing the conditions under which the trap does or does not occur. Alpha\_I in particular, since it encompasses the potential for multiple trait axes of competition, seems likely to be a key driver of whether the lock occurs, and I would like to see this examined explicitly. This connects to strengthening the framing around evolutionary tipping points more broadly, including engaging further with that literature in the Introduction and Discussion.
+\end{revcomment}
+
+\response \todo{Regime map over $\alpha_I \times \eta$ in main text; further parameters in Supplement; tipping-point literature in Introduction and Discussion. See also R1.1, R1.3, R1.6.}
+
+% ---------------------------------------------------------
+\begin{revcomment}{E3. Model assumptions and alternative explanations}
+Third, reviewer 2 raises substantive questions about the assumptions underlying the model and its application to this system that need to be addressed directly. These include the rationale for treating z as tracking prey size rather than consumer body size, whether flounder can reasonably be treated as non-evolving and at equilibrium abundance given their apparent increase in abundance and range expansion, and whether eco-evolutionary trapping is a better explanation for non-recovery than insufficient time since the 2019 fishing moratorium or a reproduction and hypoxia mechanism decoupled from competition. A short section on cod and flounder life history and the history of the fishery would help readers evaluate these alternatives.
+\end{revcomment}
+
+\response \todo{Interpretation of $z$; flounder assumptions stated as simplifications; new life-history and fishery-history section; alternative explanations discussed. See R2.1--R2.3.}
+
+% ---------------------------------------------------------
+\begin{revcomment}{E4. Empirical sections and figures}
+Finally, both reviewers offer useful suggestions for tightening the empirical sections and figures, including restructuring the statistical methods so the purpose of the data comparison is stated up front, combining Figures 2 through 4 to make room for a model schematic and parameter table, and several smaller figure refinements. Additional citations and minor reorganization suggestions from both reviewers are also worth considering.
+\end{revcomment}
+
+\response \todo{Statistical methods restructured; Figs.~2--4 combined; citations added. See R1.4, R1.5, R1.7--R1.9.}
+
+%==========================================================
+\section*{Reviewer 1}
+%==========================================================
+
+\begin{revcomment}{R1, summary}
+The authors use a quantitative genetics model to demonstrate an eco-evolutionary alternative state for two competing species. In the first state, the focal species is larger than the competitor; in the second state, the focal species is trapped smaller than the competitor (Fig 1). The authors complement their theoretical model with data analysis of cod and flounder to show that the qualitative patterns align with the narrative from their theoretical model. I really enjoyed reading this paper. The idea of an eco-evo lock due to competition is very cool and I appreciate the effort to match the patterns with the model to the data! I did have a few questions about the speed at which the population moves (i.e., how fast does the tip occur, what happens with the population size, recovery times) and feel the connection to the tipping point literature/argument of generality could be improved.
+\end{revcomment}
+
+\response \todo{Thank the reviewer.}
+
+% ---------------------------------------------------------
+\subsection*{Major comments}
+
+\begin{revcomment}{R1.1. Introduction and Discussion: tipping points}
+I think the authors could make the case that the eco lock on the evo tipping is more general if they spend a bit more time on tipping points in each of these sections. In the Introduction, it might be helpful to invoke the definition and ideas of evolutionary tipping points/alternative states earlier on as a more general process that is interesting and relevant to lots of systems; bringing Figure S2 into the main text (along Figure 1) could help reinforce that the pattern the authors describe is an example of tipping. To me, this would strengthen the argument that this competition lock is an example of the more general evo tipping points that Duncan et al review; this would prime the reader to think about ecology as a common lock to the evo tipping points already reviewed in the literature more generally. In the Discussion, the authors could consider past literature on predicting b-tipping (e.g., ``Early-warning signals for critical transitions'' by Scheffer et al (2009) doi:10.1038/nature08227) to provide more concrete management actions and possible indicators of tips. This would also help highlight what I think is the coolest and most novel part of the work.
+\end{revcomment}
+
+\response \todo{Evolutionary tipping points introduced earlier (Duncan et al. -- which papers?); Fig.~S2 moved to main text -- not sure; early-warning signals and management indicators in Discussion (Scheffer et al.\ 2009).}
+
+% ---------------------------------------------------------
+\begin{revcomment}{R1.2. Theory methods}
+I unfortunately found the theory model (Eqn (3) mostly) a bit tricky to follow. I think it would be helpful to more clearly set up the notation (e.g., $i = C, F$) and competing selection forces (e.g., hypoxia and fishing) early on in lines 100--110. It would also be nice to have a table of the parameters and their values for Figure 1 in the main text as well as an additional schematic figure showing the different forces and their functional forms (e.g., Eqn 3 underbraces and different parameters; see suggestion below on figures for a way to make space for new elements). I found $\theta$, $Q(z)$, $\rho$, $\tau$ and $\kappa$ to be quite confusing and I was having a hard time imagining all the shapes for the different functional forms. As an example of where the authors do this well, I found the description of $\alpha_{ij}$ to be very clear and intuitive as someone who has seen the infinitesimal model before; I'd love to see the authors similarly outline the terms in Eqn (3) and Eqn (4). The Supplement was very detailed, which I appreciated, and just wish some of those details could come up to the Main Text!
+\end{revcomment}
+
+\response We apologize for the indeed overly terse way of presenting our model. To make it easier to navigate, we now mention all selective forces at the outset, and supply a new table with each model parameter (Table 1). We additionally created a figure which aims to clearly show the shapes of the functions involved in the dynamics, and how those shapes are deformed as one changes the model parameters (Figure~\ref{fig:funcforms} below). The ecological dynamics rely on three simple functions: a downward parabola (intrinsic growth), a sigmoid curve (fishing and hypoxic mortality), and a Gaussian (competition). Each selection term in Eq.~4 is proportional to the slope of the corresponding term in Eq.~3. These are all shown in the new figure, with the functions of the ecological dynamics in the top row and the corresponding terms of the evolutionary dynamics in the bottom row.
+
+\begin{figure}[!ht]
+  \centering
+  \includegraphics[width=\linewidth]{fig-functional-forms.pdf}
+  \caption{Functions and their shapes used by the model. Top row: the terms of the per capita growth rate (Eq.~3) as functions of mean body size: (A) intrinsic growth, (B) fishing or hypoxic mortality, (C) the competition coefficient $\alpha_{ij}$ (per unit $\alpha_0$, with $\alpha_I = 1$). Bottom row (D–F): the corresponding selection terms of Eq. 4. Colours vary the width parameter of each function; dashed lines mark location parameters ($z^*$, $\phi$, $\zeta$) and dotted lines height parameters ($\rho$, $\eta$, $\kappa$). All other parameters are as in Fig.~1, with $\sigma_i = \sigma_j = 0.5$.}
+  \label{fig:funcforms}
+\end{figure}
+
+
+% ---------------------------------------------------------
+\begin{revcomment}{R1.3a. Results: population size}
+First, the paper's set up indicates that this eco-evo trap prevents population recovery, but the authors don't show that the population size is also trapped in Figure 1. Perhaps a third column showing dN/dt would be helpful here?
+\end{revcomment}
+
+\response The reason this is not so straightforward to do is that $\mathrm{d}N_C/\mathrm{d}t$, unlike $\mathrm{d}\mu_C/\mathrm{d}t$, depends on both $\mu_C$ and $N_C$ simultaneously. So one cannot draw a simple plot with $N_C$ along the $x$-axis and its time derivative along the $y$-axis, and hope to get useful information out of it without also knowing $\mu_C$. Indeed, one of the main reasons for assuming in the main text that flounder biomass does not change is that then $\mathrm{d}\mu_C/\mathrm{d}t$ depends \textit{only} on $\mu_C$. This allows one to analyze the model in the style of other well-known textbook examples of bifurcations and catastrophic collapse, having only a single state variable to keep track of. (The other main reason for fixing the flounder biomass was, of course, that the results are almost completely insensitive to this choice.)
+
+All that said, it is of course true that the cod biomass, like body size, also ends up trapped at low values. In fact, the trap in body size directly implies a trap in biomass, as can be shown analytically. Since flounder biomass is held constant, setting $\mathrm{d}N_C/\mathrm{d}t = 0$ in Eq.~3 yields the equilibrium cod biomass:
+\[
+  N_C^* = \frac{r(\mu_C^*) - \alpha_{CF}(\mu_C^*) N_F}{\alpha_{CC}},
+\]
+where $r(\mu_C)$ contains intrinsic growth as well as fishing and hypoxic mortality. Equilibrium biomass is therefore uniquely determined by equilibrium body size: whenever size is trapped, so is biomass. To show this explicitly, we have added a new panel to Fig.~S2, displaying equilibrium cod biomass along the original bifurcation diagram. Cod biomass declines as fishing intensifies, declines very steeply as the tipping point is crossed, but then partly rebounds (since small-bodied cod manage to escape both size-selective fishing as well as overly harsh competition from the flounder). Despite this partial rebound however, cod biomass remains trapped below its original level. We now refer to this result in the main text as well.
+
+% ---------------------------------------------------------
+\begin{revcomment}{R1.3b. Results: speed of tipping and strength of fishing}
+Second, this feels like a spot where connecting to the tipping point literature could be helpful--for example, how fast does the population tip into the alternative state and is that time scale reasonable ecologically and what are the signs of a future tip? An analysis showing how large fishing pressure/selection needs to be (relative to other sources of selection) to create this tip could be helpful here (similar perhaps to Figure S2).
+\end{revcomment}
+
+\response \todo{Time to tip and time to recover in generations; threshold fishing effort relative to other selection forces (regime map, see E2).}
+
+% ---------------------------------------------------------
+\subsection*{Minor comments}
+
+\begin{revcomment}{R1.4. Introduction: additional references}
+I think this work also closely interfaces with ``Atlantic cod recovery from the Allee effect zone: contrasting ecological and evolutionary rescue'' by Kuparinen \& Uusi-Heikkil\"a (2020) \url{https://doi.org/10.1111/faf.12470} because it similarly shows that eco-evo traps (not just Allee effects alone) make recovery time more uncertain. Also, given the data is on body size phenotypes but the model is evolution, it'd be nice to reference something like ``Detecting parallel polygenic adaptation to novel evolutionary pressure in wild populations: a case study in Atlantic cod (\textit{Gadus morhua})'' by Reid et al (2023) \url{https://doi.org/10.1098/rstb.2022.0190} to show that evolution does happen in this system in the direction we think (i.e., the body size change isn't just plastic). I'd encourage the authors to consider a citation of these papers.
+\end{revcomment}
+
+\response \todo{Both papers cited (Introduction; Discussion together with Han et al.\ 2025).}
+
+% ---------------------------------------------------------
+\begin{revcomment}{R1.5. Statistical methods}
+I think this section could benefit from more clarity in line 180. Being explicit of the purpose of the data comparison and what the key outputs will be would help the reader orient to the utility of this section (e.g., ``We use survey data for North Baltic Cod and Flounder to identify trends in population size, individual body size distribution, and diet composition in order to qualitatively compare the tipping point pattern in our model to observed biological data.''). I also think this section could be reorganized so the purpose comes first, followed by all the information about data cleaning and prep for all spatial, CPUE, and diet data, then a brief overview of the models (e.g., tweedie distribution information, ``we use the CPUE data to construct an estimate of population size for each year'', ``we use the survey data to estimate the average and 95\% of body size for each species each year, accounting for spatiotemporal autocorrelation''), and finally a description of the diet overlap analysis. Subheadings could also be helpful here (e.g., ``Diet data'' if putting all the diet data and analysis information separately from the size information/model).
+\end{revcomment}
+
+\response Thank you for this suggestion. We have restructured the section accordingly. It now opens by stating the purpose of the empirical comparison and what we estimate from the survey data, i.e., annual indices of relative biomass, length and dietary overlap between size classes of cod and flounder. We have also added subheadings to make it clearer ``Data'' (survey catches, body size and stomach content data), ``Biomass model'' (the geostatistical model and how the biomass indices are calculated) and ``Diet overlap'' (the Horn–Morisita dissimilarity index). We have also removed a redundant sentence and corrected a few typos.
+
+% ---------------------------------------------------------
+\begin{revcomment}{R1.6. Results: generality of the trap}
+I'm curious how often the phenomena in Figure 1 occurs. For example, is this a result dependent on the parameters used for the illustration, or does it always occur so long as fishing pressure or fishing selection is high enough? I'd appreciate some sort of sensitivity analysis showing how widespread this pattern is--e.g., simulating a few other example cases where the trap does or doesn't occur (or showing it always occurs!), providing an analysis to show the conditions needed for the trap.
+\end{revcomment}
+
+\response \todo{See E2.}
+
+% ---------------------------------------------------------
+\begin{revcomment}{R1.7. Figures}
+Figure 1 was really helpful to me in understanding the narrative from the theoretical model. I think Figures 2-4 could all be combined to make room for other figures and tables that would improve understanding of the model. For example: to Figure 2, add a third row showing the proportion of inverts consumed by size (using color for different size classes, no need to show the 1-inverts proportion for fish); then add a panel showing the current Figure 4 just using Q4 data. For Figure 4, I'm a bit confused by Q1 v. Q4, are those just months? If so, perhaps relabel them. I'd also suggest showing with a contour or point where the 95\% or mean size is for the two fish--this might help show that the diet didn't overlap historically and now does? I think this sort of combining Figures 2-4 makes sense given the statistical patterns aren't the big take-away from the paper, but rather a complementary story to qualitatively validate the model (compared to Figure 1/eco lock on evo tip, which I find more interesting and general).
+\end{revcomment}
+
+\response \todo{Figs.~2--4 combined as suggested; Q1/Q4 explained as survey quarters; mean/95th-percentile sizes marked.}
+
+% ---------------------------------------------------------
+\begin{revcomment}{R1.8. Line 274: ordering}
+Some of the ordering feels a bit off. Consider moving ``The underlying mechanism --an external pressure shifting a focal species into a trait range that intensifies competition with a sympatric competitor, which in turn maintains the evolved state is not unique to harvested fish populations.'' to line 286 after ``...and recovery potential (Govaert et al. 2021).'' so the topic sentence establishes this mechanistic understanding is novel (``While the individual components...'') and then comments on the generality of the mechanism.
+\end{revcomment}
+
+\response \todo{Sentence moved as suggested.}
+
+% ---------------------------------------------------------
+\begin{revcomment}{R1.9. Conclusion}
+I don't think this section is needed. It rehashes, more vaguely, the ideas already in the Discussion and isn't any more informative/forward-looking than the abstract. Ending with the current last paragraph of the Discussion is stronger, in my opinion, and cutting this paragraph would allow additional words for going into more details for contextualizing the methods/describing the model.
+\end{revcomment}
+
+\response \todo{Conclusions section removed(?)
+}
+
+%==========================================================
+\section*{Reviewer 2}
+%==========================================================
+
+\begin{revcomment}{R2, summary}
+This manuscript uses the collapse of the eastern Baltic cod as a case study to investigate whether selection imposed by environmental stressors such as harvesting and pollution can drive trait evolution towards greater niche overlap with a competitor such that the increase in competitive pressure impedes recovery. If this does occur in nature it suggests that fishery management focused solely on harvesting pressure may not be adequate to ensure recovery.
+
+I think the idea is very interesting and that by bringing it to the fore, the paper has the potential to make an important contribution. That said, I have a number of questions about the central premise as applied to this particular system as well as about the model itself.
+\end{revcomment}
+
+\response \todo{Thank the reviewer.}
+
+% ---------------------------------------------------------
+\begin{revcomment}{R2.1a. Time since collapse and fishing closure}
+First, there is insufficient background information to justify the authors' argument that the eco-evolutionary feedbacks of the kind they investigate in this paper is the reason for lack of recovery. An obvious first question is whether there has been sufficient time for recovery given the species' longevity and generation time, the time since collapse of the fishery, and time since the complete prohibition of fishing. None of this information is provided in the manuscript. Based on my somewhat limited research on the issue a complete prohibition was declared in 2019, just seven years ago. Adult lifespan is 8-10 years and sexual maturity is reached at 2-3 years of age. I could not find any data on generation time but even based on these demographic data it is not unreasonable to argue that there has not been sufficient time for trait evolution following relaxation of selection due to harvesting.
+\end{revcomment}
+
+\response \todo{New life-history/fishery section; what the 2019 closure covered; recovery time from the model in generations (see R1.3b).}
+
+% ---------------------------------------------------------
+\begin{revcomment}{R2.1b. Fishing history, hypoxia and reproduction}
+There is also other critical information that is missing. For how long had fishing continued before the reduction in body size was documented? Did the body size reduction occur at the same time as the reduction in adult lifespan from 10-15 years to 8-10 years. Both the Baltic cod and the Baltic flounder are adapted to the lower salinity and lower oxygen levels of the eastern Baltic sea. Where they are differentially affected is in reproduction. The flounder lays demersal eggs that sink to the bottom while the cod is reliant on deeper oxygenated waters for spawning. The cod is therefore more adversely affected by pollution-induced hypoxia than the flounder, which is adapted to spawn in hypoxic bottom waters. This difference alone could account for lack of recovery because as we know, selection can occur within a generation but reproduction is necessary for transmitting any heritable trait changes to the subsequent generations. Even if it is competition for prey that imposes selection, the resulting trait changes would not be transmitted to subsequent generations if reproduction is impacted by hypoxia.
+\end{revcomment}
+
+\response \todo{Timeline of fishing vs.\ size decline; hypoxia and spawning as alternative / complementary explanation discussed.}
+
+% ---------------------------------------------------------
+\begin{revcomment}{R2.1c. Dietary overlap and size structure}
+One other issue is about the degree of dietary overlap between cod and flounder. Since intermediate-sized cod have diverged to a piscivorous diet, competition is between flounder and the smaller-sized cod. This means that only a fraction of the cod population is competing with the flounder. Are there data on the relative proportions of small- vs. intermediate-sized cod in the population? If the small cod have a lower population size, drift may impede selection unless selection is very strong.
+\end{revcomment}
+
+\response \todo{Size-structure data (cf.\ Fig.~S4); drift argument addressed.}
+
+% ---------------------------------------------------------
+\begin{revcomment}{R2.1d. Request for background section}
+It may well be that these issues have no bearing on the observed lack of cod recovery. However, they are obvious questions that any ecologist reading this paper would ask and for that reason, there should be a section that discusses the key aspects of cod and flounder life history and history of cod fishing including when it started, when the fishery collapsed etc.
+\end{revcomment}
+
+\response \todo{New section added (see R2.1a--b).}
+
+% ---------------------------------------------------------
+\begin{revcomment}{R2.2. Interpretation of $z$ as prey size}
+My second question pertains to a key assumption in the eco-evolutionary model. The Methods section starts by stating that the model tracks population densities and body size distributions of two competing consumer species, with body size denoted by z. The authors then assume that the consumer's body size and the average size of its resources are sufficiently tightly correlated that z refers not to the consumer's body size but to the mean size of its prey. What is evolving then is the mean size of the prey species and not the body size of the consumer. I do not understand the rationale for this assumption. If what is evolving is the mean prey size, is selection due to harvesting and hypoxia assumed affect the prey and not the fish species? Is there any empirical evidence that prey sizes have changed due to fishing pressure and hypoxia? Is there any evidence that prey size is tightly correlated with consumer body size? Also, which prey are the authors referring to, the benthic prey that smaller cod and flounder feed on or the fish that the intermediate-sized cod feed on? If it is benthic prey, it is only the smaller cod that are impeded by competition. One would assume that once released from harvesting pressure the intermediate-sized cod would be able to, given sufficient time, evolve to the larger sizes of their predecessors.
+\end{revcomment}
+
+\response \todo{Clarify that $z$ is consumer body size, with prey size following through the predator--prey size relationship; evidence for the correlation; which prey (benthic).}
+
+% ---------------------------------------------------------
+\begin{revcomment}{R2.3. Flounder non-evolving and at equilibrium}
+The authors assume that the flounder is not evolving and that the competitor is at its equilibrium population size. I appreciate the complexities of investigating the eco-evolutionary dynamics of two evolving species, but the fact that the flounder has increased in abundance and expanded its distribution (why, how and when did this happen), argues against it staying at a steady-state abundance. This is admittedly a minor issue compared to 1 and 2, but a good paper should strive to resolve such inconsistencies and inform the reader that this is a mathematical convenience rather than a biological reality.
+\end{revcomment}
+
+\response \todo{State explicitly as mathematical simplification; full model with dynamic $N_F$ already in Fig.~S2; flounder increase described.}
+
+% ---------------------------------------------------------
+\begin{revcomment}{R2, closing}
+In summary, I think the authors have tackled an interesting question and have done a great deal of work in analyzing large amounts of data. My comments are intended to improve the manuscript to a level that would be both interesting and informative to the readership of Ecology.
+\end{revcomment}
+
+\response \todo{Thank the reviewer.}
+
+\end{document}
