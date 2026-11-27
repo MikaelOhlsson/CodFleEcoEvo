@@ -51,16 +51,16 @@ Its parameters, with their respective names in R, default values, and descriptio
 | $\sigma_F$   | `sF`     | $1/2$        | Flounder body size standard deviation        |
 | $\theta$     | `theta`  | $5$          | Trait range where pop. growth is possible    |
 | $z^*$        | `zstar`  | $1$          | Body size where cod pop. growth is ideal     |
-| $\eta$       | `eta`    | $0$--$2$     | Fishing intensity                            |
-| $\varphi$    | `phi`    | $0$          | Fishing inflection point                     |
+| $\eta$       | `eta`    | $0$--$3$     | Fishing intensity                            |
+| $\varphi$    | `phi`    | $1$          | Fishing inflection point                     |
 | $\tau$       | `tau`    | $1/2$        | Fishing transition width                     |
 | $\kappa$     | `kappa`  | $2$          | Hypoxic effect intensity                     |
 | $\zeta$      | `zeta`   | $1$          | Hypoxic effect inflection point              |
 | $\nu$        | `nu`     | $3/2$        | Hypoxic effect transition width              |
-| $N_F$        | `Fpop`   | $6$          | Flounder population density                  |
+| $N_F$        | `Fpop`   | $12$         | Flounder population density                  |
 | $\omega$     | `w`      | $1/3$        | Competition width of body size               |
 | $\alpha_0$   | `alpha0` | $1/\sqrt{2}$ | Baseline competition from body size          |
-| $\alpha_I$   | `alphaI` | $1$          | Competition from traits other than body size |
+| $\alpha_I$   | `alphaI` | $1/2$        | Competition from traits other than body size |
 
 
 To implement the model of @eq-m, we first load some packages:
@@ -77,13 +77,13 @@ We then define a function to compute $\text{d}\mu / \text{d}t$:
 # Rate of change of cod body mass, as a function of the body mass m itself
 # plus model parameters
 dmdt <- function(m, mF = 0, h2 = 0.5, rho = 5, s = 0.5, sF = 0.5,
-                 theta = 5, zstar = 1, eta = 0, phi = 0, tau = 0.5,
-                 kappa = 2, zeta = 1, nu = 1.5, Fpop = 6, w = 0.33,
-                 alpha0 = 1/sqrt(2), alphaI = 1) {
+                 theta = 5, zstar = 1, eta = 0, phi = 1, tau = 0.5,
+                 kappa = 2, zeta = 1, nu = 1.5, Fpop = 12, w = 0.33,
+                 alpha0 = 1/sqrt(2), alphaI = 0.5) {
   ((2*rho*s^2 / theta^2) * (zstar - m) -
      eta*s^2 / sqrt(pi*(2*s^2 + tau^2))*exp(-(m - phi)^2 / (2*s^2 + tau^2)) -
      kappa*s^2 / sqrt(pi*(2*s^2 + nu^2))*exp(-(m - zeta)^2 / (2*s^2 + nu^2)) -
-     s^2*Fpop*alpha0*alphaI*(mF - m) / sqrt(2*pi * (s^2 + 2 * sF^2 + w^2)^3) *
+     s^2*Fpop*alpha0*alphaI*(mF - m) / sqrt(2*pi * (s^2 + sF^2 + w^2)^3) *
      exp(-(m - mF)^2 / (2 * (s^2 + sF^2 + w^2)))) * h2
 }
 ```
@@ -230,7 +230,7 @@ equilib_fish <-
   # Solve for exact equilibrium points:
   mutate(x = case_when(
     # For label "a", we properly solve:
-    lab == "a" ~ nleqslv(x_approx, \(m) dmdt(m, eta = 2))$x,
+    lab == "a" ~ nleqslv(x_approx, \(m) dmdt(m, eta = 3))$x,
     # For label "b" there is no equilibrium point, so replace with
     # value from the no-fishing scenario:
     lab == "b" ~ equilib_nofish |> filter(lab == "b") |> pull(x)
@@ -238,7 +238,7 @@ equilib_fish <-
 
 bodysize_eqb_fish <-
   tibble(m = seq(-2.0, 2.0, l = 2001)) |>
-  mutate(fishing = dmdt(m, eta = 2)) |>
+  mutate(fishing = dmdt(m, eta = 3)) |>
   pivot_longer(cols = contains("fishing")) |>
   mutate(name = fct_relevel(name, "fishing")) |>
   filter(name == "fishing") |> 
@@ -293,14 +293,14 @@ Scenarios with three different fishing intensities, to show how a gradual increa
 
 tibble(m = seq(-2.0, 2.0, l = 201)) |> 
   mutate(nofishing = dmdt(m, eta = 0),
-         fishing = dmdt(m, eta = 1),
-         intfishing = dmdt(m, eta = 2)) |>
+         fishing = dmdt(m, eta = 1.5),
+         intfishing = dmdt(m, eta = 3)) |>
   pivot_longer(cols = contains("fishing")) |>
   mutate(name = case_match(
     name,
     "nofishing"  ~ "bold(A)~-~No~fishing~(eta == 0)",
-    "fishing"    ~ "bold(B)~-~Some~fishing~(eta == 1)",
-    "intfishing" ~ "bold(C)~-~Intense~fishing~(eta == 2)"
+    "fishing"    ~ "bold(B)~-~Some~fishing~(eta == 1.5)",
+    "intfishing" ~ "bold(C)~-~Intense~fishing~(eta == 3)"
   )) |>
   ggplot(aes(x = m, y = value)) +
   geom_line(colour = "cornflowerblue") +

@@ -35,14 +35,6 @@ library(patchwork)
 
 # Model --------------------------------------------------------------------
 
-# The competition term of markdown/cod-flounder-basic.qmd (which produces
-# Fig. 1) has (s^2 + 2*sF^2 + w^2)^3 under the square root in its
-# denominator, whereas Eq. 4 of the manuscript (and the full model in
-# cod-flounder-feedback.qmd) has (s^2 + sF^2 + w^2)^3. With the Fig. 1
-# parameters, this moves eta_crit from about 1.56 (qmd) to about 5.5 (Eq. 4).
-# Set to TRUE to reproduce the qmd version.
-use_qmd_denominator <- FALSE
-
 # Fig. 1 parameter values (see markdown/cod-flounder-basic.qmd):
 pars_fig1 <- list(
   mF     = 0,          # Flounder mean (scaled) body size
@@ -51,15 +43,15 @@ pars_fig1 <- list(
   sF     = 0.5,        # Flounder body size standard deviation
   theta  = 5,          # Trait range where population growth is possible
   zstar  = 1,          # Optimal body size for cod
-  phi    = 0,          # Fishing inflection point
+  phi    = 1,          # Fishing inflection point
   tau    = 0.5,        # Fishing transition width
   kappa  = 2,          # Hypoxic effect intensity
   zeta   = 1,          # Hypoxic effect inflection point
   nu     = 1.5,        # Hypoxic effect transition width
-  Fpop   = 6,          # Flounder population density
+  Fpop   = 12,         # Flounder population density
   w      = 0.33,       # Competition width of body size
   alpha0 = 1/sqrt(2),  # Baseline competition from body size
-  alphaI = 1           # Competition from traits other than body size
+  alphaI = 0.5         # Competition from traits other than body size
 )
 
 # Selection from fishing per unit fishing effort, B(mu) (without the h2)
@@ -71,10 +63,9 @@ sel_fishing <- function(m, p) {
 sel_other <- function(m, p) {
   with(p, {
     S <- s^2 + sF^2 + w^2
-    S_denom <- if (use_qmd_denominator) s^2 + 2*sF^2 + w^2 else S
     2*rho*s^2 / theta^2 * (zstar - m) -
       kappa*s^2 / sqrt(pi*(2*s^2 + nu^2)) * exp(-(m - zeta)^2 / (2*s^2 + nu^2)) +
-      s^2*Fpop*alpha0*alphaI*(m - mF) / sqrt(2*pi*S_denom^3) *
+      s^2*Fpop*alpha0*alphaI*(m - mF) / sqrt(2*pi*S^3) *
       exp(-(m - mF)^2 / (2*S))
   })
 }
@@ -141,7 +132,7 @@ regime_cols <- setNames(c("firebrick", "goldenrod", "steelblue", "grey60", "blac
 print(fold_points(pars_fig1))
 
 
-# Sweep 1: alphaI x kappa --------------------------------------------------
+# Sweep: alphaI x kappa ----------------------------------------------------
 
 # How much fishing it takes to tip the system, as a function of the strength
 # of competition (non-size niche overlap alphaI) and of hypoxia (kappa)
@@ -195,114 +186,3 @@ p_ak_etacrit <- ggplot(sweep_ak, aes(x = alphaI, y = kappa)) +
 fig_ak <- p_ak_regime + p_ak_etacrit + plot_annotation(tag_levels = "A")
 
 ggsave("figures/fig-sweep-alphaI-kappa.pdf", fig_ak, width = 9, height = 5.5)
-
-
-# Sweep 2: alphaI x eta ----------------------------------------------------
-
-# Which states are stable, for given niche overlap and fishing effort
-# (hypoxia and all else at Fig. 1 values)
-
-eta_max_plot <- 10
-
-sweep_a <- tibble(alphaI = seq(0.05, 1, by = 0.005)) |> run_sweep()
-
-regions_ae <-
-  crossing(sweep_a, eta = seq(0, eta_max_plot, l = 201)) |>
-  mutate(state = case_when(
-    is.na(eta_crit) ~ "single state",
-    eta < eta_rec   ~ "large only",
-    eta > eta_crit  ~ "small only",
-    TRUE            ~ "bistable"
-  )) |>
-  mutate(state = factor(state, levels = c("large only", "bistable",
-                                          "small only", "single state")))
-
-p_ae <- ggplot(regions_ae, aes(x = alphaI, y = eta)) +
-  geom_raster(aes(fill = state)) +
-  geom_line(data = sweep_a, aes(y = eta_crit), na.rm = TRUE) +
-  geom_line(data = filter(sweep_a, eta_rec >= 0), aes(y = eta_rec),
-            linetype = "dashed", na.rm = TRUE) +
-  annotate("point", x = pars_fig1$alphaI, y = 2, shape = 21,
-           fill = "white", size = 2.5) + # Fishing effort used in Fig. 1
-  scale_fill_manual(values = c("large only" = "steelblue",
-                               "bistable" = "goldenrod",
-                               "small only" = "firebrick",
-                               "single state" = "grey85")) +
-  scale_x_continuous(expand = expansion(0, 0)) +
-  scale_y_continuous(expand = expansion(0, 0)) +
-  coord_cartesian(ylim = c(0, eta_max_plot)) +
-  labs(x = expression("Non-size niche overlap," ~ alpha[I]),
-       y = expression("Fishing effort," ~ eta),
-       fill = NULL) +
-  theme_sweep
-
-ggsave("figures/fig-sweep-alphaI-eta.pdf", p_ae, width = 6, height = 4.5)
-
-
-# Sweep 3: one parameter at a time -----------------------------------------
-
-# Range of each remaining parameter (alphaI, kappa covered above; h2 does not
-# affect the tipping points; alpha0 and Fpop act only through alphaI)
-oat_ranges <- list(
-  rho   = seq(2.5, 10, l = 101),
-  theta = seq(3, 8, l = 101),
-  zstar = seq(0.5, 2, l = 101),
-  s     = seq(0.25, 1, l = 101),
-  sF    = seq(0.25, 1, l = 101),
-  phi   = seq(-0.5, 1.5, l = 101),
-  tau   = seq(0.25, 2, l = 101),
-  zeta  = seq(0, 2, l = 101),
-  nu    = seq(0.5, 3, l = 101),
-  w     = seq(0.1, 1, l = 101)
-)
-
-oat_labels <- c(
-  rho   = "Max.~intrinsic~growth~('\u03F1')",
-  theta = "Growth~range~width~(theta)",
-  zstar = "Optimal~body~size~(italic(z)*'*')",
-  s     = "Cod~size~SD~(sigma[C])",
-  sF    = "Flounder~size~SD~(sigma[F])",
-  phi   = "Fishing~inflection~point~(phi)",
-  tau   = "Fishing~transition~width~(tau)",
-  zeta  = "Hypoxia~inflection~point~(zeta)",
-  nu    = "Hypoxia~transition~width~(nu)",
-  w     = "Competition~width~(omega)"
-)
-
-sweep_oat <-
-  imap(oat_ranges, \(vals, par) {
-    tibble(!!par := vals) |>
-      run_sweep() |>
-      rename(value = all_of(par)) |>
-      mutate(parameter = par)
-  }) |>
-  list_rbind() |>
-  mutate(regime = factor(regime, levels = regime_levels),
-         parameter = factor(parameter, levels = names(oat_ranges),
-                            labels = oat_labels[names(oat_ranges)]))
-
-defaults_oat <-
-  tibble(parameter = factor(oat_labels, levels = oat_labels),
-         value = unlist(pars_fig1[names(oat_ranges)]))
-
-p_oat <- ggplot(sweep_oat, aes(x = value)) +
-  geom_ribbon(aes(ymin = pmax(eta_rec, 0), ymax = eta_crit), na.rm = TRUE,
-              fill = "goldenrod", alpha = 0.4) +
-  geom_line(aes(y = eta_crit), na.rm = TRUE) +
-  geom_line(aes(y = pmax(eta_rec, 0)), linetype = "dashed", na.rm = TRUE) +
-  geom_rug(aes(colour = regime), sides = "b", length = unit(0.05, "npc")) +
-  geom_vline(data = defaults_oat, aes(xintercept = value),
-             linetype = "dotted", colour = "grey40") +
-  facet_wrap(~ parameter, scales = "free", ncol = 4,
-             labeller = label_parsed, strip.position = "bottom") +
-  scale_colour_manual(values = regime_cols, breaks = regime_levels,
-                      drop = TRUE) +
-  labs(x = NULL, y = expression("Fishing effort," ~ eta), colour = NULL) +
-  theme_sweep +
-  theme(strip.background = element_blank(),
-        strip.placement = "outside",
-        legend.position = "bottom")
-
-ggsave("figures/fig-sweep-oat.pdf", p_oat, width = 10, height = 7,
-       device = cairo_pdf)
-
